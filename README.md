@@ -11,7 +11,7 @@ Chainline listens on **port 8098**.
 ## Quick start
 
 ```bash
-git clone <this repo>
+git clone https://github.com/nibrocsolutions/dolfgame.git
 cd dolfgame
 docker compose up -d --build
 ```
