@@ -36,6 +36,7 @@ let camTo = null;
 let camMoveStart = 0;
 let lookYaw = 0;
 let aimStamp = 0;
+let nextArm = 0;
 
 function esc(value) {
   return String(value).replace(/[&<>"']/g, (ch) => ({
@@ -178,6 +179,7 @@ function composeInput() {
 
 function send() {
   if (!ws || ws.readyState !== 1 || screen !== "play") return;
+  if (view && view.status !== "playing") return;
   ws.send(JSON.stringify(composeInput()));
 }
 
@@ -818,6 +820,7 @@ function closeSocket() {
 }
 
 function accept(next) {
+  const prevStatus = view ? view.status : "";
   const holeChanged = !view || next.hole_index !== view.hole_index;
   view = next;
   if (holeChanged) {
@@ -838,7 +841,12 @@ function accept(next) {
     startAnim(next.last_throw);
   }
   paintHud();
-  if (!anim && (next.status === "holed" || next.status === "finished")) showResult();
+  const veil = app.querySelector("#veil");
+  if (holeChanged && next.status === "playing" && veil && veil.querySelector("#next")) {
+    veil.classList.add("hidden");
+  }
+  // A later aim update used to open this sheet again after Next hole, so the first tap looked ignored.
+  if (!anim && next.status !== prevStatus && (next.status === "holed" || next.status === "finished")) showResult();
 }
 
 function startAnim(throwData) {
@@ -939,9 +947,18 @@ function showResult() {
       <p>Hole ${view.hole.number}, ${view.hole.name}. ${view.strokes} throws, par ${view.hole.par}. ${esc(view.message || "")}</p>
       <button class="primary" id="next" type="button">${last ? "See the card" : "Next hole"}</button>
     </div>`;
-  veil.querySelector("#next").addEventListener("click", () => {
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ cmd: "next" }));
+  veil.querySelector("#next").addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    const holeIndex = view ? view.hole_index : -1;
+    if (performance.now() >= nextArm) {
+      nextArm = performance.now() + 700;
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ cmd: "next" }));
+    }
     veil.classList.add("hidden");
+    window.setTimeout(() => {
+      if (!view || view.hole_index !== holeIndex || view.status !== "holed") return;
+      showResult();
+    }, 700);
   });
 }
 
