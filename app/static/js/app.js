@@ -512,6 +512,7 @@ function renderHome() {
       <p class="eyebrow">${esc(home.course.name)} · Par ${home.course.par}</p>
       <h1>Chainline</h1>
       <p class="lede">Eighteen holes, each one its own shape. Aim with the stick. Throw.</p>
+      <p class="grip">(Grip it and Rip it!)</p>
       <div class="card">
         <strong>${esc(player.name)}</strong>
         <div class="stats" style="margin-top:10px">

@@ -97,7 +97,7 @@ body:not(.playing) {
 
 .lede { margin: 6px 0 18px; line-height: 1.4; color: #1c3b28; }
 
-.home.gate .lede { margin-bottom: 2px; }
+.home .lede { margin-bottom: 2px; }
 
 .grip {
   margin: 0 0 18px;
@@ -477,4 +477,64 @@ select#disc {
     border-left: 1px solid rgba(255, 255, 255, 0.08);
     border-right: 1px solid rgba(255, 255, 255, 0.08);
   }
+}
+
+.admin-wrap {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: calc(18px + env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom));
+}
+
+.admin-wrap h1 {
+  font-weight: 600;
+  font-size: 2.4rem;
+  letter-spacing: 0.02em;
+  margin: 4px 0 0;
+  color: var(--leaf-deep);
+}
+
+.admin-wrap h2 {
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 1.05rem;
+  font-weight: 650;
+  margin: 0 0 6px;
+}
+
+.admin-wrap .lede { max-width: 40rem; }
+
+.admin-wrap .stats {
+  margin-top: 4px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+@media (max-width: 640px) {
+  .admin-wrap .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+.table-scroll { overflow-x: auto; }
+
+.admin-wrap .card-table { width: 100%; font-size: 0.95rem; }
+
+.admin-wrap .card-table th,
+.admin-wrap .card-table td {
+  padding: 8px 18px 8px 0;
+  white-space: nowrap;
+}
+
+.admin-wrap .card-table td.name { white-space: normal; }
+
+a.primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-height: 48px;
+  padding: 10px 18px;
+  border-radius: 12px;
+  background: var(--leaf);
+  border: 1px solid #174f2b;
+  color: var(--cream);
+  text-decoration: none;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 1.05rem;
 }

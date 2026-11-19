@@ -81,7 +81,11 @@ pytest
 | POST | `/api/rounds` | Resume, or start a round (`fresh`) |
 | GET | `/api/rounds/{id}?player_id=` | The current hole |
 | POST | `/api/rounds/{id}/resolve?player_id=` | Save a finished card |
+| GET | `/admin` | Player table, export, and import |
 | GET | `/api/admin/summary` | Player, round, and ace counts |
+| GET | `/api/admin/players` | Each player, with the round still going |
+| GET | `/api/admin/export` | Download every player and every round |
+| POST | `/api/admin/import` | Replace every player and every round |
 | WebSocket | `/api/rounds/{id}/play?player_id=` | Aim and throw in, hole state out |
 
 The socket expects JSON: `aim` is `[x, y]` from -1 to 1, the way the castle stick reports it (y down the screen), `power` is 0 to 1, `pressed` may include `throw`, `disc` is a mold id, and `release` is `hyzer`, `flat`, or `anhyzer`. `{"cmd":"next"}` walks to the next tee after the basket. Send about ten to twenty times a second. The server throws when `throw` is in `pressed`. `shoot` and `fire` do nothing.
@@ -97,7 +101,7 @@ The socket expects JSON: `aim` is `[x, y]` from -1 to 1, the way the castle stic
 
 ## Notes
 
-- Anyone who can open the address can play, and anyone who can open `/api/admin/summary` can read the counts. Keep it on your home network. Do not forward port 8098 to the internet.
+- Anyone who can open the address can play, and anyone who can open `/admin` can read, export, or replace the players and the rounds. Keep it on your home network. Do not forward port 8098 to the internet.
 - The phone has to reach the machine. On the same Wi-Fi, use that machine's address.
 - Progress lives in SQLite. The phone only remembers the player id and whether sound is on.
 - The page does not load fonts, pictures, or sound files from the internet. The throw, the chains, the trees, the water, and the birds are synthesized on the phone. Safari will not play them until a tap starts the speaker, and the iPhone mute switch silences them even then.
