@@ -70,10 +70,7 @@ def test_inside_three_feet_is_a_gimmie(monkeypatch):
     assert state["scores"] == [1]
 
 
-def test_the_look_is_not_always_straight_at_the_basket():
-    biases = [hole["look_bias"] for hole in HOLES]
-    assert any(bias < -0.2 for bias in biases)
-    assert any(bias > 0.2 for bias in biases)
+def test_every_hole_has_bushes_and_a_hill():
     for hole in HOLES:
         assert len(hole["bushes"]) >= 2
         assert hole["hills"]
