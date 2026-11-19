@@ -87,7 +87,7 @@ def ground_height(hole: dict, x: float, y: float) -> float:
     else:
         along = ((x - tee[0]) * dx + (y - tee[1]) * dy) / span
     along = clamp(along, 0.0, 1.0)
-    height = float(hole.get("elevation") or 0.0) * along
+    height = float(hole.get("elevation") or 0.0) * along + _contour(hole, x, y)
     for hx, hy, rise, radius in hole.get("hills") or ():
         if radius <= 0:
             continue
@@ -95,6 +95,18 @@ def ground_height(hole: dict, x: float, y: float) -> float:
         if d < 1.0:
             height += float(rise) * (1.0 - d * d)
     return height
+
+
+def _contour(hole: dict, x: float, y: float) -> float:
+    """A low roll across the hole. It fades out by the tee and the basket."""
+    number = float(hole.get("number") or 1)
+    tee = hole["tee"]
+    basket = hole["basket"]
+    basket_d = math.hypot(x - basket[0], y - basket[1])
+    tee_d = math.hypot(x - tee[0], y - tee[1])
+    fade = min(max(0.0, (basket_d - 16.0) / 22.0), max(0.0, (tee_d - 18.0) / 24.0), 1.0)
+    roll = math.sin(x * 0.05 + number) * 0.9 + math.cos(y * 0.034 + number * 0.4) * 0.7
+    return roll * fade
 
 
 def _yaw_velocity(vx: float, vy: float, yaw: float, dt: float) -> tuple[float, float]:
