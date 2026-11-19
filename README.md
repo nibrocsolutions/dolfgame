@@ -47,10 +47,10 @@ docker compose down
 
 ## Controls
 
-- Drag the fairway to look around. The basket sits off to the left or the right on a lot of holes. If you throw past it, drag until the basket is in front of you again. A marker on the edge points the way when it is off the screen.
-- The stick aims the way you are looking. Up the stick throws ahead. Left and right are left and right of that look, and a small push does not swing the disc very far. The bright line on the ground is the throw. How far you push is how hard you throw. Inside the circle, a full push is a putt, not a drive.
+- The drive looks down the hole with the basket off to the left or the right. After that throw, the basket is in front of you. Drag the fairway if you need to look around. A marker on the edge points the way when the basket is off the screen.
+- The stick aims the way you are looking. Up the stick throws ahead. The line starts on the disc and curves the way that disc will fly: hyzer bends left, anhyzer bends right. The line eases, so a quick flick does not yank it. How far you push fills the Power bar above Throw, and that is how hard you throw. Inside the circle, a full push is a putt, not a drive.
 - A lie inside 3 ft is a gimmie. The hole is finished.
-- Pines stand in the fairway and along it. They are tall trunks with a few limbs at the top. Only the trunk stops a disc, from the ground all the way up. Bushes sit on the sides and a few sit in the fairway. The ground rolls a little.
+- Pines stand in the fairway and along it. They are tall trunks with a few limbs at the top. Only the trunk stops a disc, from the ground all the way up. Bushes sit on the sides and a few sit in the fairway. The ground rolls, with hills and low contours.
 - The disc menu picks the mold. Hyzer, Flat, and Anhyzer set the release. Keyboard 1, 2, and 3 jump to a putter, a midrange, and a driver.
 - Keyboard: arrow keys aim, J or Space throws, 1 2 3 pick the type, Q W E pick hyzer, flat, anhyzer.
 

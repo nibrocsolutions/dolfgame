@@ -35,6 +35,7 @@ let camFrom = null;
 let camTo = null;
 let camMoveStart = 0;
 let lookYaw = 0;
+let aimStamp = 0;
 
 function esc(value) {
   return String(value).replace(/[&<>"']/g, (ch) => ({
@@ -100,9 +101,13 @@ function readAim() {
     const norm = Math.hypot(ax, ay) || 1;
     const softened = softenStick((ax / norm) * mag, (ay / norm) * mag);
     const next = aimFromStick(softened[0], softened[1]);
+    const now = performance.now();
+    const dt = aimStamp ? Math.min(0.05, (now - aimStamp) / 1000) : 0.016;
+    aimStamp = now;
+    const follow = 1 - Math.exp(-dt * 2.0);
     latched = [
-      latched[0] * 0.62 + next[0] * 0.38,
-      latched[1] * 0.62 + next[1] * 0.38,
+      latched[0] + (next[0] - latched[0]) * follow,
+      latched[1] + (next[1] - latched[1]) * follow,
     ];
   }
   return latched;
@@ -113,7 +118,7 @@ function softenStick(ax, ay) {
   if (mag < 1e-4) return [0, 0];
   let nx = ax / mag;
   const ny = ay / mag;
-  nx = Math.sign(nx) * Math.pow(Math.abs(nx), 1.75);
+  nx = Math.sign(nx) * Math.pow(Math.abs(nx), 2.15);
   const scale = Math.hypot(nx, ny) || 1;
   return [(nx / scale) * mag, (ny / scale) * mag];
 }
@@ -145,10 +150,11 @@ function faceLie(snapshot) {
   const dx = hole.basket[0] - snapshot.lie[0];
   const dy = hole.basket[1] - snapshot.lie[1];
   const toward = Math.atan2(dy, dx);
+  // Only the drive looks off to the side. After that the basket is in front, so the next throw is easier.
+  if ((snapshot.strokes || 0) > 0) return toward;
   const bias = hole.look_bias || 0;
   const fairway = Math.atan2(hole.basket[1] - hole.tee[1], hole.basket[0] - hole.tee[0]) + bias;
   const gap = wrapAngle(toward - fairway);
-  // The fairway look leaves the basket off to one side. If it is behind you, turn until you can see it.
   if (Math.abs(gap) > 0.85) return toward - Math.sign(gap || 1) * 0.32;
   return fairway;
 }
@@ -528,7 +534,7 @@ function renderHome() {
       <div class="card">
         <div class="how">
           <p>The bag is Innova and MVP. Putter, midrange, or driver on every throw. Hyzer finishes left. Anhyzer finishes right. Flat lets the disc fly its own numbers.</p>
-          <p>Drag the fairway to look around. The basket is not always straight ahead. Up on the stick throws the way you are looking. The bright line is the throw. Inside 3 ft is a gimmie.</p>
+          <p>The drive looks off to the side. After that the basket is in front of you. Drag the fairway to look around. The line starts on the disc and curves with the throw. Inside 3 ft is a gimmie.</p>
           <p>Keyboard: arrows aim, J or Space throws. The first tap clicks. On an iPhone the mute switch silences the page.</p>
         </div>
         <div class="bag-preview">${molds}</div>
@@ -609,7 +615,10 @@ function showPlay(id, firstView) {
       <div class="deck">
         <div class="stick" id="aim"><div class="knob"></div><span>Aim</span></div>
         <div class="throw-col">
-          <div class="power"><i id="power-fill"></i></div>
+          <div class="power-wrap">
+            <span>Power</span>
+            <div class="power"><i id="power-fill"></i></div>
+          </div>
           <button type="button" id="throw">Throw</button>
         </div>
       </div>
@@ -1019,7 +1028,7 @@ function draw() {
   if (!basketPoint.behind) drawBasketAt(ctx, basketPoint, Math.hypot(hole.basket[0] - cam.lx, hole.basket[1] - cam.ly));
   scenery.filter((item) => item.foot.depth <= basketPoint.depth + 0.4).forEach(drawOne);
   markBasket(ctx, cam, hole, basketPoint, w);
-  if (view.status === "playing" && !anim) drawAimLine(ctx, cam, hole);
+  if (view.status === "playing" && !anim) drawAimLine(ctx, cam, hole, w, h);
   if (thrown && thrown.air) drawFlyingDisc(ctx, cam, thrown);
   else drawInHand(ctx, w, h, currentDisc() || view.disc);
   drawWind(ctx, hole, w);
@@ -1097,13 +1106,22 @@ function lookAt(hole, stand, width, height) {
   };
 }
 
+function contourAt(hole, x, y) {
+  const number = hole.number || 1;
+  const basketD = Math.hypot(x - hole.basket[0], y - hole.basket[1]);
+  const teeD = Math.hypot(x - hole.tee[0], y - hole.tee[1]);
+  const fade = Math.min(Math.max(0, (basketD - 16) / 22), Math.max(0, (teeD - 18) / 24), 1);
+  const roll = Math.sin(x * 0.05 + number) * 0.9 + Math.cos(y * 0.034 + number * 0.4) * 0.7;
+  return roll * fade;
+}
+
 function groundAt(hole, x, y) {
   const dx = hole.basket[0] - hole.tee[0];
   const dy = hole.basket[1] - hole.tee[1];
   const span = dx * dx + dy * dy;
   let along = span < 1 ? 0 : ((x - hole.tee[0]) * dx + (y - hole.tee[1]) * dy) / span;
   along = Math.max(0, Math.min(1, along));
-  let height = (hole.elevation || 0) * along;
+  let height = (hole.elevation || 0) * along + contourAt(hole, x, y);
   (hole.hills || []).forEach((hill) => {
     const radius = hill[3] || 1;
     const d = Math.hypot(x - hill[0], y - hill[1]) / radius;
@@ -1162,7 +1180,15 @@ function groundColor(hole, x, y, depth, lateral, cam) {
   const straw = hole.trees.some((tree) => Math.hypot(x - tree[0], y - tree[1]) < 2.2);
   const fair = hole.fairway.some((poly) => pointInPoly(x, y, poly));
   if (straw && !fair) return (Math.floor(x + y) % 2) ? "#c4a15a" : "#a8843e";
+  const dx = hole.basket[0] - hole.tee[0];
+  const dy = hole.basket[1] - hole.tee[1];
+  const span = dx * dx + dy * dy || 1;
+  const along = Math.max(0, Math.min(1, ((x - hole.tee[0]) * dx + (y - hole.tee[1]) * dy) / span));
+  const extra = groundAt(hole, x, y) - (hole.elevation || 0) * along;
+  if (fair && extra > 0.7) return (Math.floor(y / 5) % 2) ? "#8fbe62" : "#7eae52";
+  if (fair && extra < -0.55) return (Math.floor(y / 5) % 2) ? "#2f8a40" : "#267838";
   if (fair) return (Math.floor(y / 5) % 2) ? "#4eae55" : "#3d9846";
+  if (extra > 0.8) return (Math.floor((x + y) / 7) % 2) ? "#3d7a42" : "#2f6836";
   return (Math.floor((x + y) / 7) % 2) ? "#1e5c34" : "#174828";
 }
 
@@ -1376,20 +1402,34 @@ function drawBasketAt(ctx, point, distance) {
   ctx.stroke();
 }
 
-function drawAimLine(ctx, cam, hole) {
+function drawAimLine(ctx, cam, hole, width, height) {
   const aim = readAim();
   const power = Math.min(1, Math.hypot(aim[0], aim[1]));
   if (power < 0.08) return;
   const angle = Math.atan2(-aim[1], aim[0]);
   const ax = Math.cos(angle);
   const ay = Math.sin(angle);
+  const rightX = ay;
+  const rightY = -ax;
   const disc = currentDisc() || view.disc;
-  const reach = Math.max(12, cam.dist * 0.92);
-  const pts = [];
-  for (let step = 1.4; step <= reach; step += Math.max(1.2, reach / 28)) {
-    const x = cam.lx + ax * step;
-    const y = cam.ly + ay * step;
-    const point = cam.project(x, y, groundAt(hole, x, y) + 0.08);
+  const hyzer = release === "hyzer" ? 1 : release === "anhyzer" ? -1 : 0;
+  const turn = (disc.turn || 0) + hyzer * 1.25;
+  const fade = Math.max(0, (disc.fade || 0) + hyzer * 1.55);
+  const reach = Math.max(10, cam.dist * (0.45 + 0.48 * power));
+  const pts = [{ x: width / 2, y: height - 22 }];
+  const steps = 28;
+  for (let i = 1; i <= steps; i += 1) {
+    const u = i / steps;
+    const step = reach * u;
+    const turnHold = 1 - Math.exp(-u * 2.6);
+    const fadeHold = Math.pow(u, 1.85);
+    const bend = (-turn) * turnHold * 0.13 - fade * fadeHold * 0.16;
+    const raw = bend * step * (step / 18);
+    const cap = reach * 0.34;
+    const side = cap * Math.tanh(raw / cap);
+    const x = cam.lx + ax * step + rightX * side;
+    const y = cam.ly + ay * step + rightY * side;
+    const point = cam.project(x, y, groundAt(hole, x, y) + 0.12);
     if (!point.behind) pts.push(point);
   }
   if (pts.length < 2) return;

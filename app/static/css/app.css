@@ -368,6 +368,17 @@ select#disc {
 
 .throw-col { display: flex; flex-direction: column; gap: 8px; }
 
+.power-wrap { display: flex; flex-direction: column; gap: 4px; }
+
+.power-wrap span {
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #d5ead0;
+  text-align: center;
+}
+
 .power {
   height: 8px;
   border-radius: 99px;

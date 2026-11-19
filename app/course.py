@@ -442,10 +442,14 @@ def _lay_ground(hole) -> None:
         if number % 3 == 0 and along > 0.7:
             continue
         place(span * along, lateral, "bush", size)
-    place(span * 0.4, 7.5 if number % 2 else -8.0, "hill", 1.8 + (number % 3) * 0.7)
-    place(span * 0.66, -6.5 if number % 2 else 9.0, "hill", 1.4 + (number % 4) * 0.45)
-    if span > 120:
-        place(span * 0.5, 4.2 if number % 2 else -4.5, "hill", 1.3)
+    place(span * 0.4, 7.5 if number % 2 else -8.0, "hill", 2.1 + (number % 3) * 0.55)
+    place(span * 0.66, -6.5 if number % 2 else 9.0, "hill", 1.7 + (number % 4) * 0.4)
+    place(span * 0.24, 13.0 if number % 2 else -12.0, "hill", 2.4)
+    place(span * 0.5, -11.5 if number % 2 else 12.5, "hill", 1.9)
+    place(span * 0.78, 8.5 if number % 2 else -9.5, "hill", 2.2)
+    if span > 90:
+        place(span * 0.36, -15.0, "hill", 1.6)
+        place(span * 0.58, 14.0, "hill", 1.8)
     for cx, cy, radius in hole["dry"]:
         if radius < 8:
             continue
