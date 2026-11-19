@@ -368,9 +368,7 @@ def _wet(hole, x, y) -> bool:
 
 
 def _plant(hole) -> None:
-    """Pines along the sides, off the straight line, so the look down the hole stays open."""
-    if hole["number"] in (2, 4, 6, 7, 9, 10, 14, 16, 18):
-        return
+    """Long pines in the fairway and along it. Trunks stay off the throwing line except the doglegs."""
     tee, basket = hole["tee"], hole["basket"]
     dx, dy = basket[0] - tee[0], basket[1] - tee[1]
     span = math.hypot(dx, dy) or 1.0
@@ -378,20 +376,26 @@ def _plant(hole) -> None:
     rx, ry = fy, -fx
     extra: list[tuple[float, float, float]] = []
     existing = list(hole["trees"])
-    side = 13.5 if span < 120 else 16.0
-    distance = 14.0
-    while distance < span + 8:
-        for lateral, radius in ((side, 2.7), (-side - 1.4, 2.5), (side + 5.0, 2.2)):
+    lanes = (2.7, -3.0, 5.4, -5.8, 8.6, -9.2, 12.8, -13.4)
+    distance = 9.0
+    guards = hole["number"] in (4, 9, 18)
+    while distance < span + 2 and len(extra) < 72:
+        for lane_i, lateral in enumerate(lanes):
+            if (int(distance / 8) + lane_i) % 2 == 1 and abs(lateral) >= 8:
+                continue
             x = tee[0] + fx * distance + rx * lateral
             y = tee[1] + fy * distance + ry * lateral
             if _wet(hole, x, y):
                 continue
-            if _segment_distance(tee, basket, x, y) <= radius + 1.15:
+            if not guards and _segment_distance(tee, basket, x, y) < 1.55:
                 continue
-            if any(math.hypot(x - tx, y - ty) < 3.4 for tx, ty, _radius in existing + extra):
+            if any(math.hypot(x - tx, y - ty) < 2.4 for tx, ty, _radius in existing + extra):
                 continue
-            extra.append((round(x, 1), round(y, 1), radius))
-        distance += 16.0
+            extra.append((round(x, 1), round(y, 1), 0.45))
+        distance += 8.0
+    if guards and not any(_segment_distance(tee, basket, tx, ty) < 0.45 for tx, ty, _radius in existing + extra):
+        along = span * 0.46
+        extra.append((round(tee[0] + fx * along, 1), round(tee[1] + fy * along, 1), 0.45))
     hole["trees"] = tuple(existing + extra)
 
 

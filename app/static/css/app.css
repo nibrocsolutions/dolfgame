@@ -330,8 +330,8 @@ select#disc {
 
 .stick {
   position: relative;
-  width: 118px;
-  height: 118px;
+  width: 148px;
+  height: 148px;
   margin: 0 auto;
   border-radius: 50%;
   background: radial-gradient(circle at 50% 45%, #2f6a40, #1a3d26 70%);
@@ -444,7 +444,7 @@ select#disc {
 .card-table td.num, .card-table th.num { text-align: right; }
 
 @media (max-width: 380px) {
-  .stick { width: 100px; height: 100px; }
+  .stick { width: 124px; height: 124px; }
   .home h1 { font-size: 2.2rem; }
   .kinds button, .molds button { font-size: 0.72rem; }
 }
