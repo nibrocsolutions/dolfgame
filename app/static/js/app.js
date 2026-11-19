@@ -615,7 +615,10 @@ function showPlay(id, firstView) {
       <div class="deck">
         <div class="stick" id="aim"><div class="knob"></div><span>Aim</span></div>
         <div class="throw-col">
-          <div class="power"><i id="power-fill"></i></div>
+          <div class="power-wrap">
+            <span>Power</span>
+            <div class="power"><i id="power-fill"></i></div>
+          </div>
           <button type="button" id="throw">Throw</button>
         </div>
       </div>
