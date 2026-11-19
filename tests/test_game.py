@@ -1,6 +1,7 @@
 import math
 
 from app.course import HOLES, PAR_TOTAL
+from app.flight import TRUNK_RADIUS
 from app.game import advance, new_round, public_view, step
 
 
@@ -108,13 +109,13 @@ def test_the_round_ends_after_eighteen_holes():
 
 
 def _clear(origin, hole) -> bool:
+    """True when no trunk stands on the straight line. The limbs are not in the way."""
     x0, y0 = origin
     x1, y1 = hole["basket"]
-    for step in range(1, 36):
-        t = step / 36
-        x = x0 + (x1 - x0) * t
-        y = y0 + (y1 - y0) * t
-        for tx, ty, radius in hole["trees"]:
-            if math.hypot(x - tx, y - ty) < radius - 0.3:
-                return False
+    dx, dy = x1 - x0, y1 - y0
+    span = dx * dx + dy * dy or 1.0
+    for tx, ty, _radius in hole["trees"]:
+        t = max(0.0, min(1.0, ((tx - x0) * dx + (ty - y0) * dy) / span))
+        if math.hypot(tx - (x0 + dx * t), ty - (y0 + dy * t)) < TRUNK_RADIUS:
+            return False
     return True

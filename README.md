@@ -47,7 +47,8 @@ docker compose down
 
 ## Controls
 
-- The stick aims. Up the stick throws toward the basket. Left and right are left and right of that look. How far you push is how hard you throw. Inside the circle, a full push is a putt, not a drive.
+- The stick aims. Up the stick throws toward the basket you are looking at. Left and right are left and right of that look. The bright line on the ground is the throw. How far you push is how hard you throw. Inside the circle, a full push is a putt, not a drive.
+- Pines stand in the fairway and along it. They are tall trunks with a few limbs at the top. Only the trunk stops a disc, from the ground all the way up.
 - Throw sends the disc along that aim. If you have not aimed, Throw goes toward the basket at an easy pace.
 - The disc menu picks the mold. Hyzer, Flat, and Anhyzer set the release. Keyboard 1, 2, and 3 jump to a putter, a midrange, and a driver.
 - Keyboard: arrow keys aim, J or Space throws, 1 2 3 pick the type, Q W E pick hyzer, flat, anhyzer.

@@ -2,7 +2,7 @@ import math
 
 from app.course import HOLES
 from app.discs import BAG, DISCS
-from app.flight import simulate, travel
+from app.flight import TRUNK_RADIUS, _tree_hit, simulate, travel
 
 
 def test_a_driver_outruns_a_mid_and_a_putter():
@@ -23,6 +23,16 @@ def test_hyzer_finishes_left_of_anhyzer():
     assert finish("roc3", "hyzer") < finish("roc3", "flat") < finish("roc3", "anhyzer")
     assert finish("leopard3", "flat") > finish("mako3", "flat") + 8
     assert abs(finish("mako3", "flat")) < 8
+
+
+def test_a_trunk_stops_the_disc_the_whole_way_up():
+    assert _tree_hit(0.1, 12.0, 24.0, 0.0, [(0.0, 12.0, 4.0)]) is not None
+    assert _tree_hit(TRUNK_RADIUS + 0.4, 12.0, 2.0, 0.0, [(0.0, 12.0, 6.0)]) is None
+    hole = _flat()
+    hole["trees"] = ((0.15, 16.0, 4.0),)
+    assert simulate(DISCS["mako3"], (0, 0), math.pi / 2, 1, "flat", hole)["hit_tree"]
+    hole["trees"] = ((3.2, 16.0, 4.0),)
+    assert not simulate(DISCS["mako3"], (0, 0), math.pi / 2, 1, "flat", hole)["hit_tree"]
 
 
 def test_the_edge_of_the_map_is_rough_not_a_cliff():

@@ -86,7 +86,7 @@ function axis(negative, positive) {
 function readAim() {
   let ax = stick[0];
   let ay = stick[1];
-  if (Math.hypot(ax, ay) < 0.18) {
+  if (Math.hypot(ax, ay) < 0.08) {
     const kx = axis("ArrowLeft", "ArrowRight");
     const ky = axis("ArrowUp", "ArrowDown");
     if (Math.hypot(kx, ky) > 0.1) {
@@ -94,7 +94,7 @@ function readAim() {
       ay = ky;
     }
   }
-  if (Math.hypot(ax, ay) > 0.18) {
+  if (Math.hypot(ax, ay) > 0.08) {
     const mag = Math.min(1, Math.hypot(ax, ay));
     const norm = Math.hypot(ax, ay) || 1;
     latched = aimFromStick((ax / norm) * mag, (ay / norm) * mag);
@@ -235,6 +235,7 @@ function unlockAudio(event) {
     const waiting = (audioCtx.state === "suspended" || audioCtx.state === "interrupted")
       ? audioCtx.resume()
       : Promise.resolve();
+    loadChains();
     return Promise.resolve(waiting).then(() => {
       if (heard && audioCtx && audioCtx.state === "running") audioPrimed = true;
     });
@@ -325,40 +326,45 @@ function throwSound() {
   tone(low ? 280 : 480, 0.16, "sine", 0.08, 140);
 }
 
+let chainBytes = null;
+let chainBuffer = null;
+let chainLoading = null;
+
+fetch("/static/audio/chains.wav")
+  .then((res) => res.arrayBuffer())
+  .then((buf) => { chainBytes = buf; })
+  .catch(() => {});
+
+function loadChains() {
+  if (chainBuffer) return Promise.resolve(chainBuffer);
+  if (!audioCtx) return Promise.resolve(null);
+  if (chainLoading) return chainLoading;
+  const bytes = chainBytes
+    ? Promise.resolve(chainBytes)
+    : fetch("/static/audio/chains.wav").then((res) => res.arrayBuffer());
+  chainLoading = bytes
+    .then((buf) => audioCtx.decodeAudioData(buf.slice(0)))
+    .then((decoded) => {
+      chainBuffer = decoded;
+      return decoded;
+    })
+    .catch(() => null);
+  return chainLoading;
+}
+
 function chainSound() {
-  if (!liveAudio()) return;
-  const hits = [0, 0.05, 0.1, 0.16, 0.24, 0.34, 0.46];
-  hits.forEach((delay, index) => {
-    const now = audioCtx.currentTime + delay;
+  const play = () => {
+    if (!liveAudio() || !chainBuffer) return;
     const source = audioCtx.createBufferSource();
-    source.buffer = noiseBuffer();
-    const filter = audioCtx.createBiquadFilter();
-    filter.type = "bandpass";
-    filter.frequency.value = 1600 + index * 260;
-    filter.Q.value = 7;
+    source.buffer = chainBuffer;
     const gain = audioCtx.createGain();
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.42, now + 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.1);
-    source.connect(filter);
-    filter.connect(gain);
+    gain.gain.value = 1;
+    source.connect(gain);
     gain.connect(master);
-    source.start(now);
-    source.stop(now + 0.12);
-    const osc = audioCtx.createOscillator();
-    osc.type = "triangle";
-    const freq = 1280 + (index % 4) * 340;
-    osc.frequency.setValueAtTime(freq, now);
-    osc.frequency.exponentialRampToValueAtTime(Math.max(180, freq * 0.68), now + 0.09);
-    const ring = audioCtx.createGain();
-    ring.gain.setValueAtTime(0.0001, now);
-    ring.gain.exponentialRampToValueAtTime(0.16, now + 0.006);
-    ring.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
-    osc.connect(ring);
-    ring.connect(master);
-    osc.start(now);
-    osc.stop(now + 0.16);
-  });
+    source.start();
+  };
+  if (chainBuffer) play();
+  else loadChains().then(play);
 }
 
 function treeSound() {
@@ -492,7 +498,7 @@ function renderHome() {
       <div class="card">
         <div class="how">
           <p>The bag is Innova and MVP. Putter, midrange, or driver on every throw. Hyzer finishes left. Anhyzer finishes right. Flat lets the disc fly its own numbers.</p>
-          <p>Up on the stick is up the map. Push farther for a harder throw. Water and the road cost a penalty, and you throw again from the same lie.</p>
+          <p>Up on the stick throws toward the basket. The bright line is the throw. Push farther for a harder throw. Water and the road cost a penalty, and you throw again from the same lie.</p>
           <p>Keyboard: arrows aim, J or Space throws. The first tap clicks. On an iPhone the mute switch silences the page.</p>
         </div>
         <div class="bag-preview">${molds}</div>
@@ -698,7 +704,7 @@ function bindStick(el) {
     const cy = rect.top + rect.height / 2;
     let dx = clientX - cx;
     let dy = clientY - cy;
-    const max = rect.width * 0.32;
+    const max = rect.width * 0.42;
     const mag = Math.hypot(dx, dy) || 1;
     const clamped = Math.min(mag, max);
     dx = (dx / mag) * clamped;
@@ -802,7 +808,7 @@ function hearFlight(simTime, done) {
 function frame(now) {
   if (screen === "play") {
     readAim();
-    if (view && !anim && Math.hypot(stick[0], stick[1]) < 0.18) {
+    if (view && !anim && Math.hypot(stick[0], stick[1]) < 0.08) {
       const key = lieKey(view);
       if (key !== latchedKey && view.status === "playing") {
         latched = pointAtBasket(view);
@@ -947,9 +953,9 @@ function draw() {
   }).filter((item) => !item.foot.behind).sort((a, b) => b.foot.depth - a.foot.depth);
   const basketGround = groundAt(hole, hole.basket[0], hole.basket[1]);
   const basketPoint = cam.project(hole.basket[0], hole.basket[1], basketGround);
-  pines.filter((item) => item.foot.depth > basketPoint.depth + 0.4).forEach((item) => drawPine(ctx, item.foot, item.tree[2]));
+  pines.filter((item) => item.foot.depth > basketPoint.depth + 0.4).forEach((item) => drawPine(ctx, item.foot, item.tree));
   if (!basketPoint.behind) drawBasketAt(ctx, basketPoint, cam.dist);
-  pines.filter((item) => item.foot.depth <= basketPoint.depth + 0.4).forEach((item) => drawPine(ctx, item.foot, item.tree[2]));
+  pines.filter((item) => item.foot.depth <= basketPoint.depth + 0.4).forEach((item) => drawPine(ctx, item.foot, item.tree));
   if (view.status === "playing" && !anim) drawAimLine(ctx, cam, hole);
   if (thrown && thrown.air) drawFlyingDisc(ctx, cam, thrown);
   else drawInHand(ctx, w, h, currentDisc() || view.disc);
@@ -974,8 +980,15 @@ function cameraStand() {
     camTo = target.slice();
     camMoveStart = now;
   }
+  if (Math.hypot(stick[0], stick[1]) > 0.05 && !anim) {
+    camLie = target.slice();
+    camFrom = camLie.slice();
+    camTo = target.slice();
+    camMoveStart = now;
+    return camLie;
+  }
   const span = Math.hypot(camTo[0] - camFrom[0], camTo[1] - camFrom[1]);
-  const duration = Math.min(1800, 700 + span * 35);
+  const duration = Math.min(640, 260 + span * 8);
   const t = Math.min(1, (now - camMoveStart) / duration);
   const eased = t * t * (3 - 2 * t);
   camLie = [
@@ -1086,7 +1099,7 @@ function groundColor(hole, x, y, depth, lateral, cam) {
     return ((Math.floor(x / 3) + Math.floor(y / 2)) % 2) ? "#1787aa" : "#136f90";
   }
   if (hole.ob.some((poly) => pointInPoly(x, y, poly))) return "#c6a56a";
-  const straw = hole.trees.some((tree) => Math.hypot(x - tree[0], y - tree[1]) < tree[2] * 3.1);
+  const straw = hole.trees.some((tree) => Math.hypot(x - tree[0], y - tree[1]) < 2.2);
   const fair = hole.fairway.some((poly) => pointInPoly(x, y, poly));
   if (straw && !fair) return (Math.floor(x + y) % 2) ? "#c4a15a" : "#a8843e";
   if (fair) return (Math.floor(y / 5) % 2) ? "#4eae55" : "#3d9846";
@@ -1110,136 +1123,163 @@ function pointInPoly(x, y, poly) {
   return inside;
 }
 
-function drawPine(ctx, foot, radius) {
-  if (foot.depth < 1.1 || foot.depth > 220) return;
-  const height = Math.max(7.5, radius * 3.1);
+function drawPine(ctx, foot, tree) {
+  if (foot.depth < 1.1 || foot.depth > 240) return;
+  const x = tree[0];
+  const y = tree[1];
+  const vary = Math.abs(Math.sin(x * 0.37 + y * 0.21));
+  const height = 13 + vary * 5;
   const s = foot.scale;
   const h = height * s;
-  const base = foot.y;
-  const top = base - h;
-  const width = Math.max(6, radius * s * 1.35);
-  ctx.fillStyle = "#6d4528";
-  ctx.fillRect(foot.x - Math.max(1.2, width * 0.07), base - h * 0.22, Math.max(2.4, width * 0.14), h * 0.22);
-  [0, 1, 2].forEach((layer) => {
-    const y0 = top + h * (0.05 + layer * 0.2);
-    const y1 = y0 + h * 0.46;
-    const half = width * (0.46 + layer * 0.2);
+  const trunkW = Math.max(2, 0.34 * s);
+  const top = foot.y - h;
+  ctx.fillStyle = "#4e3420";
+  ctx.fillRect(foot.x - trunkW / 2, top, trunkW, h);
+  ctx.fillStyle = "#7a5a38";
+  ctx.fillRect(foot.x - trunkW / 2, top, Math.max(1, trunkW * 0.32), h);
+  const crown = h * 0.26;
+  ctx.strokeStyle = "#1d5c32";
+  ctx.lineCap = "round";
+  ctx.lineWidth = Math.max(1, trunkW * 0.45);
+  const limbs = 4;
+  for (let i = 0; i < limbs; i += 1) {
+    const ly = top + crown * ((i + 0.35) / limbs);
+    const len = trunkW * (2.1 + (i % 2) * 0.7);
+    const side = i % 2 ? 1 : -1;
     ctx.beginPath();
-    ctx.moveTo(foot.x, y0);
-    ctx.lineTo(foot.x + half, y1);
-    ctx.lineTo(foot.x - half, y1);
-    ctx.closePath();
-    ctx.fillStyle = ["#3d9a4c", "#21763a", "#145228"][layer];
-    ctx.fill();
-  });
+    ctx.moveTo(foot.x, ly);
+    ctx.lineTo(foot.x + side * len, ly + len * 0.62);
+    ctx.moveTo(foot.x, ly + 1.5);
+    ctx.lineTo(foot.x - side * len * 0.72, ly + len * 0.5);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#174e2c";
+  ctx.beginPath();
+  ctx.moveTo(foot.x, top - trunkW * 1.1);
+  ctx.lineTo(foot.x + trunkW * 1.5, top + crown * 0.18);
+  ctx.lineTo(foot.x - trunkW * 1.5, top + crown * 0.18);
+  ctx.closePath();
+  ctx.fill();
 }
 
 function drawBasketAt(ctx, point, distance) {
-  // Upright basket: yellow band on top, chains hanging down, wire cage under the chains, pole into the ground.
-  const boosted = 540 / Math.pow(Math.max(distance, 2.4), 0.78);
+  // The picture: yellow band, separate oval chain links, an open wire cage, a thin pole into the ground.
+  const boosted = 680 / Math.pow(Math.max(distance, 2.2), 0.7);
   const ppm = Math.max(point.scale, boosted);
   const yAt = (meters) => point.y - meters * ppm;
-  const bandTop = 1.4;
-  const bandBot = 1.14;
-  const cageTop = 0.8;
-  const cageBot = 0.36;
-  const bandHalf = 0.32 * ppm;
-  const cageTopHalf = 0.3 * ppm;
-  const cageBotHalf = 0.34 * ppm;
+  const cx = point.x;
+  const bandTop = 1.62;
+  const bandBot = 1.32;
+  const cageTop = 0.84;
+  const cageBot = 0.54;
+  const bandRx = 0.34 * ppm;
+  const bandRy = Math.max(2.4, 0.08 * ppm);
+  const cageRx = 0.5 * ppm;
+  const cageRy = Math.max(2.6, 0.1 * ppm);
+  const outline = Math.max(1.25, ppm * 0.016);
 
-  ctx.fillStyle = "rgba(0,0,0,0.28)";
+  ctx.fillStyle = "rgba(0,0,0,0.22)";
   ctx.beginPath();
-  ctx.ellipse(point.x, point.y + ppm * 0.04, ppm * 0.42, ppm * 0.1, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, point.y + ppm * 0.03, ppm * 0.34, ppm * 0.08, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.strokeStyle = "#b7c0c4";
-  ctx.lineWidth = Math.max(2, ppm * 0.045);
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(point.x, point.y);
-  ctx.lineTo(point.x, yAt(bandTop));
-  ctx.stroke();
+  const poleW = Math.max(2.4, ppm * 0.042);
+  const poleTop = yAt(cageBot + 0.08);
+  ctx.fillStyle = "#c5ced3";
+  ctx.fillRect(cx - poleW / 2, poleTop, poleW, point.y - poleTop);
+  ctx.fillStyle = "#eef3f5";
+  ctx.fillRect(cx - poleW / 2, poleTop, Math.max(1, poleW * 0.28), point.y - poleTop);
+  ctx.strokeStyle = "#1c2124";
+  ctx.lineWidth = outline * 0.85;
+  ctx.strokeRect(cx - poleW / 2, poleTop, poleW, point.y - poleTop);
 
-  const chains = 9;
-  ctx.strokeStyle = "#3e4448";
-  ctx.lineWidth = Math.max(1.1, ppm * 0.018);
-  for (let i = 0; i < chains; i += 1) {
-    const t = chains === 1 ? 0.5 : i / (chains - 1);
-    const x0 = point.x + (t - 0.5) * bandHalf * 1.35;
-    const x1 = point.x + (t - 0.5) * cageTopHalf * 1.7;
-    const top = yAt(bandBot);
-    const bot = yAt(cageTop - 0.06);
+  const cageStroke = () => {
+    ctx.strokeStyle = "#3c444a";
+    ctx.lineWidth = Math.max(1.15, ppm * 0.018);
+  };
+  const ring = (y, rx, ry, from, to) => {
     ctx.beginPath();
-    ctx.moveTo(x0, top);
-    ctx.lineTo(x1, bot);
+    ctx.ellipse(cx, y, rx, ry, 0, from, to);
     ctx.stroke();
-    const links = 5;
+  };
+  cageStroke();
+  const topY = yAt(cageTop);
+  const botY = yAt(cageBot);
+  const midY = (topY + botY) / 2;
+  ring(topY, cageRx, cageRy, Math.PI, 0);
+  ring(botY, cageRx * 0.92, cageRy * 0.85, Math.PI, 0);
+  ring(midY, cageRx * 0.96, cageRy * 0.9, Math.PI, 0);
+  const bars = 13;
+  for (let i = 0; i < bars; i += 1) {
+    const t = i / (bars - 1);
+    const x = cx + (t - 0.5) * cageRx * 2;
+    ctx.beginPath();
+    ctx.moveTo(x, topY);
+    ctx.lineTo(cx + (t - 0.5) * cageRx * 1.84, botY);
+    ctx.stroke();
+  }
+
+  const chainTop = yAt(bandBot) + bandRy * 0.2;
+  const chainBot = topY + Math.max(4, cageRy * 0.9);
+  const span = Math.max(10, chainBot - chainTop);
+  const chains = 9;
+  const links = 7;
+  for (let i = 0; i < chains; i += 1) {
+    const t = i / (chains - 1);
+    const x0 = cx + (t - 0.5) * bandRx * 1.7;
+    const x1 = cx + (t - 0.5) * bandRx * 1.45;
+    const step = span / links;
+    const ry = step * 0.48;
+    const rx = ry * 0.58;
+    ctx.strokeStyle = "#2b3136";
+    ctx.lineWidth = Math.max(1.35, Math.min(rx * 0.42, 3.2));
     for (let link = 0; link < links; link += 1) {
       const u = (link + 0.5) / links;
       const lx = x0 + (x1 - x0) * u;
-      const ly = top + (bot - top) * u;
-      ctx.fillStyle = link % 2 ? "#6d7478" : "#2f3438";
+      const ly = chainTop + span * u;
       ctx.beginPath();
-      ctx.ellipse(lx, ly, Math.max(1.3, ppm * 0.028), Math.max(2.1, ppm * 0.05), 0, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.ellipse(lx, ly, Math.max(1.15, rx), Math.max(2.1, ry), 0, 0, Math.PI * 2);
+      ctx.stroke();
     }
   }
 
-  ctx.fillStyle = "rgba(190, 198, 202, 0.28)";
+  cageStroke();
+  ring(topY, cageRx, cageRy, 0, Math.PI);
+  ring(botY, cageRx * 0.92, cageRy * 0.85, 0, Math.PI);
+  ring(midY, cageRx * 0.96, cageRy * 0.9, 0, Math.PI);
   ctx.beginPath();
-  ctx.moveTo(point.x - cageTopHalf, yAt(cageTop));
-  ctx.lineTo(point.x + cageTopHalf, yAt(cageTop));
-  ctx.lineTo(point.x + cageBotHalf, yAt(cageBot));
-  ctx.lineTo(point.x - cageBotHalf, yAt(cageBot));
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = "#4d555a";
-  ctx.lineWidth = Math.max(1.2, ppm * 0.02);
-  ctx.stroke();
-  for (let i = 1; i <= 3; i += 1) {
-    const t = i / 4;
-    const y = yAt(cageTop + (cageBot - cageTop) * t);
-    const half = cageTopHalf + (cageBotHalf - cageTopHalf) * t;
-    ctx.beginPath();
-    ctx.moveTo(point.x - half, y);
-    ctx.lineTo(point.x + half, y);
-    ctx.stroke();
-  }
-  for (let i = 0; i < 7; i += 1) {
-    const t = i / 6;
-    ctx.beginPath();
-    ctx.moveTo(point.x + (t - 0.5) * cageTopHalf * 2, yAt(cageTop));
-    ctx.lineTo(point.x + (t - 0.5) * cageBotHalf * 2, yAt(cageBot));
-    ctx.stroke();
-  }
-  ctx.strokeStyle = "#d5dce0";
-  ctx.lineWidth = Math.max(1.4, ppm * 0.028);
-  ctx.beginPath();
-  ctx.moveTo(point.x - cageTopHalf, yAt(cageTop));
-  ctx.lineTo(point.x + cageTopHalf, yAt(cageTop));
+  ctx.ellipse(cx, topY, cageRx, cageRy, 0, 0, Math.PI * 2);
   ctx.stroke();
 
   const top = yAt(bandTop);
   const bot = yAt(bandBot);
-  ctx.fillStyle = "#f0b429";
   ctx.beginPath();
-  ctx.moveTo(point.x - bandHalf, bot);
-  ctx.lineTo(point.x + bandHalf, bot);
-  ctx.lineTo(point.x + bandHalf * 0.92, top);
-  ctx.lineTo(point.x - bandHalf * 0.92, top);
+  ctx.moveTo(cx - bandRx, top);
+  ctx.lineTo(cx - bandRx, bot);
+  ctx.ellipse(cx, bot, bandRx, bandRy, 0, Math.PI, 0, true);
+  ctx.lineTo(cx + bandRx, top);
+  ctx.ellipse(cx, top, bandRx, bandRy, 0, 0, Math.PI, true);
   ctx.closePath();
+  ctx.fillStyle = "#f0a41a";
   ctx.fill();
-  ctx.fillStyle = "#ffd15c";
+  ctx.fillStyle = "#ffd056";
   ctx.beginPath();
-  ctx.ellipse(point.x, top, bandHalf * 0.92, Math.max(2, ppm * 0.055), 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, top, bandRx, bandRy, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = "#a8740d";
-  ctx.lineWidth = Math.max(1.2, ppm * 0.02);
+  ctx.strokeStyle = "#1a1a1a";
+  ctx.lineWidth = outline;
+  ctx.beginPath();
+  ctx.ellipse(cx, top, bandRx, bandRy, 0, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.fillStyle = "#c98412";
   ctx.beginPath();
-  ctx.ellipse(point.x, bot, bandHalf, Math.max(1.6, ppm * 0.04), 0, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.moveTo(cx - bandRx, top);
+  ctx.lineTo(cx - bandRx, bot);
+  ctx.moveTo(cx + bandRx, top);
+  ctx.lineTo(cx + bandRx, bot);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(cx, bot, bandRx, bandRy, 0, 0, Math.PI);
+  ctx.stroke();
 }
 
 function drawAimLine(ctx, cam, hole) {
@@ -1250,23 +1290,30 @@ function drawAimLine(ctx, cam, hole) {
   const ax = Math.cos(angle);
   const ay = Math.sin(angle);
   const disc = currentDisc() || view.disc;
-  const reach = Math.max(5, power * (8 + disc.speed * 2.2));
-  ctx.strokeStyle = "rgba(255,255,255,0.85)";
-  ctx.lineWidth = 2;
-  ctx.setLineDash([7, 7]);
-  ctx.beginPath();
-  let started = false;
-  for (let step = 2; step <= reach; step += Math.max(1.5, reach / 18)) {
+  const reach = Math.max(12, cam.dist * 0.92);
+  const pts = [];
+  for (let step = 1.4; step <= reach; step += Math.max(1.2, reach / 28)) {
     const x = cam.lx + ax * step;
     const y = cam.ly + ay * step;
-    const point = cam.project(x, y, groundAt(hole, x, y) + 0.05);
-    if (point.behind) continue;
-    if (!started) ctx.moveTo(point.x, point.y);
-    else ctx.lineTo(point.x, point.y);
-    started = true;
+    const point = cam.project(x, y, groundAt(hole, x, y) + 0.08);
+    if (!point.behind) pts.push(point);
   }
+  if (pts.length < 2) return;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+  ctx.strokeStyle = "rgba(255,255,255,0.92)";
+  ctx.lineWidth = 6;
   ctx.stroke();
-  ctx.setLineDash([]);
+  ctx.strokeStyle = (disc && disc.color) || "#f4f0e6";
+  ctx.lineWidth = 2.4 + power * 2.4;
+  ctx.stroke();
+  const end = pts[pts.length - 1];
+  ctx.fillStyle = (disc && disc.color) || "#f4f0e6";
+  ctx.beginPath();
+  ctx.arc(end.x, end.y, 5 + power * 3, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function drawFlyingDisc(ctx, cam, lie) {

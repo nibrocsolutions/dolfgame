@@ -16,6 +16,8 @@ from app.discs import Disc
 
 DT = 0.02
 SAMPLE_EVERY = 3
+# A pine stops the disc with its trunk, from the ground to the top. The limbs are not a target.
+TRUNK_RADIUS = 0.45
 BARE_HOLE = {
     "tee": (0.0, 0.0),
     "basket": (0.0, 400.0),
@@ -191,11 +193,10 @@ def simulate(
 
 
 def _tree_hit(x: float, y: float, z: float, ground: float, trees) -> tuple[float, float, float] | None:
-    if z > ground + 9:
-        return None
-    for tx, ty, radius in trees:
-        if math.hypot(x - tx, y - ty) < radius:
-            return tx, ty, radius
+    del z, ground
+    for tx, ty, _canopy in trees:
+        if math.hypot(x - tx, y - ty) < TRUNK_RADIUS:
+            return tx, ty, TRUNK_RADIUS
     return None
 
 
