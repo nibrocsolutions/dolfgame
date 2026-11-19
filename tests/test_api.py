@@ -1,6 +1,8 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app.course import HOLES
+
 
 @pytest.fixture()
 def client():
@@ -64,3 +66,41 @@ def test_play_socket_throws_the_disc(client):
     assert thrown["strokes"] >= 1
     assert thrown["last_throw"]["result"] in {"safe", "chains", "tree", "water", "ob"}
     assert thrown["lie"][1] > hello["lie"][1] or thrown["status"] == "holed"
+
+
+def test_leaving_a_finished_hole_still_walks_on(client, monkeypatch):
+    basket = HOLES[0]["basket"]
+
+    def land_close(*_args, **_kwargs):
+        return {
+            "samples": [[0, 0, 1], [basket[0] + 0.4, basket[1], 0]],
+            "events": [],
+            "result": "safe",
+            "x": basket[0] + 0.4,
+            "y": basket[1],
+            "hit_tree": False,
+            "dt": 0.06,
+            "seconds": 0.4,
+        }
+
+    monkeypatch.setattr("app.game.simulate", land_close)
+    player_id = client.post("/api/players", json={"name": "Cara"}).json()["id"]
+    round_id = client.post("/api/rounds", json={"player_id": player_id}).json()["round"]["id"]
+    with client.websocket_connect(f"/api/rounds/{round_id}/play?player_id={player_id}") as socket:
+        socket.receive_json()
+        socket.send_json({"cmd": "input", "aim": [0, -1], "power": 0.4, "pressed": ["throw"], "disc": "aviar", "release": "flat"})
+        holed = socket.receive_json()
+    assert holed["status"] == "holed"
+    assert holed["hole"]["number"] == 1
+    resumed = client.post("/api/rounds", json={"player_id": player_id}).json()
+    assert resumed["resumed"] is True
+    assert resumed["view"]["status"] == "holed"
+    assert resumed["view"]["hole"]["number"] == 1
+    with client.websocket_connect(f"/api/rounds/{round_id}/play?player_id={player_id}") as socket:
+        hello = socket.receive_json()
+        assert hello["status"] == "holed"
+        socket.send_json({"cmd": "next"})
+        walked = socket.receive_json()
+    assert walked["status"] == "playing"
+    assert walked["hole"]["number"] == 2
+    assert walked["strokes"] == 0

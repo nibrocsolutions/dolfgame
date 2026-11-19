@@ -105,7 +105,7 @@ function readAim() {
     const now = performance.now();
     const dt = aimStamp ? Math.min(0.05, (now - aimStamp) / 1000) : 0.016;
     aimStamp = now;
-    const follow = 1 - Math.exp(-dt * 2.0);
+    const follow = 1 - Math.exp(-dt * 1.25);
     latched = [
       latched[0] + (next[0] - latched[0]) * follow,
       latched[1] + (next[1] - latched[1]) * follow,
@@ -119,7 +119,7 @@ function softenStick(ax, ay) {
   if (mag < 1e-4) return [0, 0];
   let nx = ax / mag;
   const ny = ay / mag;
-  nx = Math.sign(nx) * Math.pow(Math.abs(nx), 2.15);
+  nx = Math.sign(nx) * Math.pow(Math.abs(nx), 2.45);
   const scale = Math.hypot(nx, ny) || 1;
   return [(nx / scale) * mag, (ny / scale) * mag];
 }
@@ -135,7 +135,13 @@ function aimFromStick(ax, ay) {
   const ry = -fx;
   const wx = fx * forward + rx * right;
   const wy = fy * forward + ry * right;
-  const angle = Math.atan2(wy, wx);
+  let angle = Math.atan2(wy, wx);
+  if (view && view.hole && view.lie) {
+    const toward = Math.atan2(view.hole.basket[1] - view.lie[1], view.hole.basket[0] - view.lie[0]);
+    const off = wrapAngle(angle - toward);
+    const hold = Math.exp(-(off / 0.36) * (off / 0.36));
+    angle = toward + off * (1 - hold * 0.62);
+  }
   return [Math.cos(angle) * mag, -Math.sin(angle) * mag];
 }
 
@@ -529,7 +535,7 @@ function renderHome() {
       <div class="card">
         <div class="how">
           <p>The bag is Innova and MVP. Putter, midrange, or driver on every throw. Hyzer finishes left. Anhyzer finishes right. Flat lets the disc fly its own numbers.</p>
-          <p>The basket stays in front of you. Drag the fairway to look around. The line starts on the disc and arcs toward the basket as you aim. Inside 3 ft is a gimmie.</p>
+          <p>The basket stays in front of you. Drag the fairway to look around. The line starts on the disc and shows the throw. A small lean stays on the basket. Inside 3 ft is a gimmie.</p>
           <p>Keyboard: arrows aim, J or Space throws. The first tap clicks. On an iPhone the mute switch silences the page.</p>
         </div>
         <div class="bag-preview">${molds}</div>
@@ -622,6 +628,11 @@ function showPlay(id, firstView) {
   bindLook(app.querySelector("#course"));
   app.querySelector("#throw").addEventListener("pointerdown", (event) => {
     event.preventDefault();
+    if (view && !anim && (view.status === "holed" || view.status === "finished")) {
+      if (view.status === "finished") showResult();
+      else walkOn();
+      return;
+    }
     queueThrow();
   });
   app.querySelector("#leave").addEventListener("click", () => boot());
@@ -629,6 +640,7 @@ function showPlay(id, firstView) {
   paintBag();
   paintHud();
   connect(id);
+  if (firstView.status === "holed" || firstView.status === "finished") showResult();
   startWind();
   if (!loopStarted) {
     loopStarted = true;
@@ -743,7 +755,14 @@ function paintHud() {
   const dots = app.querySelector("#dots");
   dots.innerHTML = Array.from({ length: hole.par }, (_, index) => `<i class="${index < view.strokes ? "on" : ""}"></i>`).join("");
   const button = app.querySelector("#throw");
-  if (button) button.disabled = view.status !== "playing" || !!anim;
+  if (button) {
+    const done = !anim && (view.status === "holed" || view.status === "finished");
+    button.disabled = !done && (view.status !== "playing" || !!anim);
+    if (done && view.status === "finished") button.textContent = "Card";
+    else if (done && view.hole_index >= 17) button.textContent = "See the card";
+    else if (done) button.textContent = "Next hole";
+    else button.textContent = "Throw";
+  }
   const fill = app.querySelector("#power-fill");
   if (fill) fill.style.width = `${Math.round(Math.min(1, Math.hypot(latched[0], latched[1])) * 100)}%`;
 }
@@ -942,17 +961,23 @@ function showResult() {
     </div>`;
   veil.querySelector("#next").addEventListener("pointerdown", (event) => {
     event.preventDefault();
-    const holeIndex = view ? view.hole_index : -1;
-    if (performance.now() >= nextArm) {
-      nextArm = performance.now() + 700;
-      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ cmd: "next" }));
-    }
-    veil.classList.add("hidden");
-    window.setTimeout(() => {
-      if (!view || view.hole_index !== holeIndex || view.status !== "holed") return;
-      showResult();
-    }, 700);
+    walkOn();
   });
+}
+
+function walkOn() {
+  if (!view || view.status !== "holed") return;
+  const holeIndex = view.hole_index;
+  if (performance.now() >= nextArm) {
+    nextArm = performance.now() + 700;
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ cmd: "next" }));
+  }
+  const veil = app.querySelector("#veil");
+  if (veil) veil.classList.add("hidden");
+  window.setTimeout(() => {
+    if (!view || view.hole_index !== holeIndex || view.status !== "holed") return;
+    showResult();
+  }, 700);
 }
 
 function showCard(force) {
@@ -1417,31 +1442,34 @@ function drawAimLine(ctx, cam, hole, width, height) {
   const power = Math.min(1, Math.hypot(aim[0], aim[1]));
   if (power < 0.08) return;
   const angle = Math.atan2(-aim[1], aim[0]);
-  const bx = hole.basket[0];
-  const by = hole.basket[1];
-  const toward = Math.atan2(by - cam.ly, bx - cam.lx);
-  const off = wrapAngle(angle - toward);
-  const bulge = Math.max(-0.75, Math.min(0.75, -off));
-  const basketPoint = cam.project(bx, by, groundAt(hole, bx, by) + 1.1);
-  const start = { x: width / 2, y: height - 22 };
-  const uMax = 0.42 + 0.58 * power;
-  const finish = basketPoint.behind
-    ? { x: start.x, y: start.y - Math.max(80, height * 0.42) * uMax }
-    : {
-        x: start.x + (basketPoint.x - start.x) * uMax,
-        y: start.y + (basketPoint.y - start.y) * uMax,
-      };
-  const spanX = finish.x - start.x;
-  const spanY = finish.y - start.y;
-  const span = Math.hypot(spanX, spanY) || 1;
-  const bow = bulge * Math.min(160, span * 0.62);
-  const c1x = (start.x + finish.x) / 2 + (-spanY / span) * bow;
-  const c1y = (start.y + finish.y) / 2 + (spanX / span) * bow;
+  const ax = Math.cos(angle);
+  const ay = Math.sin(angle);
+  const rightX = ay;
+  const rightY = -ax;
   const disc = currentDisc() || view.disc;
+  const hyzer = release === "hyzer" ? 1 : release === "anhyzer" ? -1 : 0;
+  const turn = (disc.turn || 0) + hyzer * 1.25;
+  const fade = Math.max(0, (disc.fade || 0) + hyzer * 1.55);
+  const speed = (disc && disc.speed) || 5;
+  let full = Math.min(125, 20 + speed * 16 - speed * speed * 0.55);
+  if (cam.dist < 30) full = Math.min(full, cam.dist * 1.25 + 1);
+  const reach = Math.max(8, full * (0.34 + 0.66 * power));
+  const basket = hole.basket;
+  const shape = (-turn) * 0.045 - fade * 0.055;
+  let landX = cam.lx + ax * reach + rightX * shape * reach;
+  let landY = cam.ly + ay * reach + rightY * shape * reach;
+  if (Math.hypot(landX - basket[0], landY - basket[1]) < 5) {
+    landX = basket[0];
+    landY = basket[1];
+  }
+  const landing = cam.project(landX, landY, groundAt(hole, landX, landY) + 0.4);
+  const start = { x: width / 2, y: height - 22 };
+  const finish = landing.behind ? { x: start.x, y: start.y - height * 0.35 } : landing;
+  const c1x = start.x * 0.62 + finish.x * 0.38;
+  const c1y = start.y * 0.38 + finish.y * 0.62;
   const pts = [start];
-  const steps = 28;
-  for (let i = 1; i <= steps; i += 1) {
-    const u = i / steps;
+  for (let i = 1; i <= 24; i += 1) {
+    const u = i / 24;
     const omu = 1 - u;
     pts.push({
       x: omu * omu * start.x + 2 * omu * u * c1x + u * u * finish.x,
