@@ -1,0 +1,17 @@
+{
+  "name": "Chainline",
+  "short_name": "Chainline",
+  "description": "Eighteen holes at Pine Bend. Aim and throw.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#144d2c",
+  "theme_color": "#144d2c",
+  "icons": [
+    {
+      "src": "/static/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

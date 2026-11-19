@@ -1,0 +1,17 @@
+services:
+  chainline:
+    build: .
+    image: chainline:latest
+    container_name: chainline
+    ports:
+      - "8098:8098"
+    volumes:
+      - chainline-data:/data
+    environment:
+      DATA_DIR: /data
+      PORT: "8098"
+      TZ: America/New_York
+    restart: unless-stopped
+
+volumes:
+  chainline-data:
