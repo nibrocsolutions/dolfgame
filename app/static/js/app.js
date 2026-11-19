@@ -30,6 +30,10 @@ let seenThrow = -1;
 let windNode = null;
 let birdTimer = 0;
 let loopStarted = false;
+let camLie = null;
+let camFrom = null;
+let camTo = null;
+let camMoveStart = 0;
 
 function esc(value) {
   return String(value).replace(/[&<>"']/g, (ch) => ({
@@ -93,9 +97,34 @@ function readAim() {
   if (Math.hypot(ax, ay) > 0.18) {
     const mag = Math.min(1, Math.hypot(ax, ay));
     const norm = Math.hypot(ax, ay) || 1;
-    latched = [(ax / norm) * mag, (ay / norm) * mag];
+    latched = aimFromStick((ax / norm) * mag, (ay / norm) * mag);
   }
   return latched;
+}
+
+function aimFromStick(ax, ay) {
+  if (!view) return [ax, ay];
+  const lie = view.lie;
+  let fx = view.hole.basket[0] - lie[0];
+  let fy = view.hole.basket[1] - lie[1];
+  let dist = Math.hypot(fx, fy);
+  if (dist < 0.8) {
+    fx = view.hole.basket[0] - view.hole.tee[0];
+    fy = view.hole.basket[1] - view.hole.tee[1];
+    dist = Math.hypot(fx, fy) || 1;
+  }
+  fx /= dist;
+  fy /= dist;
+  const rx = fy;
+  const ry = -fx;
+  const mag = Math.min(1, Math.hypot(ax, ay));
+  const norm = Math.hypot(ax, ay) || 1;
+  const forward = -ay / norm;
+  const right = ax / norm;
+  const wx = fx * forward + rx * right;
+  const wy = fy * forward + ry * right;
+  const angle = Math.atan2(wy, wx);
+  return [Math.cos(angle) * mag, -Math.sin(angle) * mag];
 }
 
 function composeInput() {
@@ -297,8 +326,38 @@ function throwSound() {
 }
 
 function chainSound() {
-  [1680, 2140, 2620, 1960, 2480].forEach((freq, index) => {
-    setTimeout(() => tone(freq, 0.14, "triangle", 0.16, freq * 0.7), index * 28);
+  if (!liveAudio()) return;
+  const hits = [0, 0.05, 0.1, 0.16, 0.24, 0.34, 0.46];
+  hits.forEach((delay, index) => {
+    const now = audioCtx.currentTime + delay;
+    const source = audioCtx.createBufferSource();
+    source.buffer = noiseBuffer();
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = 1600 + index * 260;
+    filter.Q.value = 7;
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.42, now + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.1);
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(master);
+    source.start(now);
+    source.stop(now + 0.12);
+    const osc = audioCtx.createOscillator();
+    osc.type = "triangle";
+    const freq = 1280 + (index % 4) * 340;
+    osc.frequency.setValueAtTime(freq, now);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(180, freq * 0.68), now + 0.09);
+    const ring = audioCtx.createGain();
+    ring.gain.setValueAtTime(0.0001, now);
+    ring.gain.exponentialRampToValueAtTime(0.16, now + 0.006);
+    ring.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+    osc.connect(ring);
+    ring.connect(master);
+    osc.start(now);
+    osc.stop(now + 0.16);
   });
 }
 
@@ -506,8 +565,8 @@ function showPlay(id, firstView) {
         <div class="veil hidden" id="veil"></div>
       </div>
       <div class="bag">
-        <div class="kinds" id="kinds"></div>
-        <div class="molds" id="molds"></div>
+        <label class="disc-label" for="disc">Disc</label>
+        <select id="disc"></select>
         <div class="releases" id="releases"></div>
       </div>
       <div class="deck">
@@ -550,33 +609,34 @@ function pointAtBasket(snapshot) {
 function paintBag() {
   const disc = currentDisc();
   if (!disc || !view) return;
-  const kinds = app.querySelector("#kinds");
-  const molds = app.querySelector("#molds");
+  const menu = app.querySelector("#disc");
   const releases = app.querySelector("#releases");
-  if (!kinds) return;
-  kinds.innerHTML = ["putter", "midrange", "driver"].map((name) => {
-    const label = name === "midrange" ? "Mid" : name[0].toUpperCase() + name.slice(1);
-    return `<button type="button" data-kind="${name}" class="${name === kind ? "on" : ""}">${label}</button>`;
+  if (!menu || !releases) return;
+  const labels = { putter: "Putters", midrange: "Midranges", driver: "Drivers" };
+  menu.innerHTML = ["putter", "midrange", "driver"].map((name) => {
+    const options = view.bag.filter((item) => item.kind === name).map((item) => `
+      <option value="${esc(item.id)}" ${item.id === selectedId ? "selected" : ""}>${esc(item.name)} · ${esc(item.brand)} · ${esc(item.numbers)}</option>
+    `).join("");
+    return `<optgroup label="${labels[name]}">${options}</optgroup>`;
   }).join("");
-  molds.innerHTML = view.bag.filter((item) => item.kind === kind).map((item) => `
-    <button type="button" data-disc="${esc(item.id)}" class="${item.id === selectedId ? "on" : ""}">
-      ${esc(item.name)}
-      <small>${esc(item.brand)} · ${esc(item.numbers)}</small>
-    </button>`).join("");
+  if (menu.dataset.bound !== "1") {
+    menu.dataset.bound = "1";
+    menu.addEventListener("change", () => {
+      selectedId = menu.value;
+      const picked = currentDisc();
+      if (picked) kind = picked.kind;
+      const thrown = app.querySelector("#throw");
+      if (thrown && picked) {
+        thrown.style.background = picked.color;
+        thrown.style.borderColor = picked.rim;
+        thrown.style.color = inkFor(picked.color);
+      }
+      send();
+    });
+  }
   releases.innerHTML = ["hyzer", "flat", "anhyzer"].map((name) => `
     <button type="button" data-release="${name}" class="${name === release ? "on" : ""}">${name[0].toUpperCase()}${name.slice(1)}</button>
   `).join("");
-  kinds.querySelectorAll("button").forEach((button) => {
-    button.addEventListener("click", () => setKind(button.dataset.kind));
-  });
-  molds.querySelectorAll("button").forEach((button) => {
-    button.addEventListener("click", () => {
-      selectedId = button.dataset.disc;
-      kind = currentDisc().kind;
-      paintBag();
-      send();
-    });
-  });
   releases.querySelectorAll("button").forEach((button) => {
     button.addEventListener("click", () => setRelease(button.dataset.release));
   });
@@ -702,6 +762,10 @@ function accept(next) {
     kind = next.disc.kind;
     latched = pointAtBasket(next);
     latchedKey = lieKey(next);
+    camLie = next.lie.slice();
+    camFrom = camLie.slice();
+    camTo = camLie.slice();
+    camMoveStart = performance.now();
     paintBag();
   }
   if (next.last_throw && next.last_throw.seq !== seenThrow && next.throw_seq !== seenThrow) {
@@ -715,15 +779,23 @@ function accept(next) {
 function startAnim(throwData) {
   const samples = throwData.samples || [];
   const dt = (throwData.dt || 0.06) * 1000 / 1.25;
-  anim = { data: throwData, started: performance.now(), stepMs: dt, count: Math.max(1, samples.length - 1) };
-  const played = new Set();
-  anim.played = played;
-  (throwData.events || []).forEach((item) => {
-    const at = (item.t || 0) * 1000 / 1.25;
-    setTimeout(() => {
-      if (item.kind === "chains") chainSound();
-      if (item.kind === "tree") treeSound();
-    }, at);
+  anim = {
+    data: throwData,
+    started: performance.now(),
+    stepMs: dt,
+    count: Math.max(1, samples.length - 1),
+    heard: {},
+  };
+}
+
+function hearFlight(simTime, done) {
+  if (!anim) return;
+  (anim.data.events || []).forEach((item, index) => {
+    if (anim.heard[index]) return;
+    if (simTime + 0.03 < (item.t || 0) && !done) return;
+    anim.heard[index] = true;
+    if (item.kind === "chains") chainSound();
+    if (item.kind === "tree") treeSound();
   });
 }
 
@@ -741,8 +813,13 @@ function frame(now) {
       const elapsed = now - anim.started;
       const index = Math.min(anim.count, elapsed / anim.stepMs);
       anim.index = index;
-      if (index >= anim.count) {
+      const simTime = index * (anim.data.dt || 0.06);
+      const finished = index >= anim.count;
+      hearFlight(simTime, finished);
+      if (finished) {
         const done = anim.data;
+        const caught = (done.events || []).some((item, index) => item.kind === "chains" && anim.heard[index]);
+        if (done.result === "chains" && !caught) chainSound();
         anim = null;
         if (done.result === "water") splashSound();
         if (done.result === "ob") tone(90, 0.18, "sine", 0.1, 55);
@@ -860,295 +937,372 @@ function draw() {
   const ctx = canvas.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const hole = view.hole;
-  const cam = camera(frameBounds(hole.bounds, view.lie), w, h);
-  ctx.fillStyle = "#163c26";
-  ctx.fillRect(0, 0, w, h);
-  roundedBounds(ctx, cam, hole.bounds, "#1e5c34");
-  hole.fairway.forEach((poly) => {
-    trace(ctx, cam, poly);
-    ctx.fillStyle = "#3f9a45";
-    ctx.fill();
-    stripe(ctx, cam, poly, hole.bounds);
-  });
-  hole.ob.forEach((poly) => {
-    trace(ctx, cam, poly);
-    ctx.fillStyle = "#c6a56a";
-    ctx.fill();
-    hatch(ctx, cam, poly);
-  });
-  hole.water.forEach((poly) => {
-    trace(ctx, cam, poly);
-    const mid = cam.px(poly[0][0], poly[0][1]);
-    ctx.fillStyle = "#1a86a8";
-    ctx.fill();
-    ctx.strokeStyle = "#b7e7f2";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    void mid;
-  });
-  hole.dry.forEach((circle) => {
-    const [sx, sy] = cam.px(circle[0], circle[1]);
-    ctx.beginPath();
-    ctx.arc(sx, sy, circle[2] * cam.scale, 0, Math.PI * 2);
-    ctx.fillStyle = "#4eae55";
-    ctx.fill();
-    ctx.strokeStyle = "#d8f3c9";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-  });
-  drawTee(ctx, cam, hole);
-  hole.trees.forEach((tree) => drawTree(ctx, cam, tree));
   const thrown = flightPoint();
-  if (view.last_throw && !anim) drawTrail(ctx, cam, view.last_throw.samples, view.last_throw.color);
-  if (anim) drawTrail(ctx, cam, anim.data.samples.slice(0, Math.ceil(anim.index) + 1), anim.data.color);
-  if (view.status === "playing") drawAim(ctx, cam);
-  drawBasket(ctx, cam, hole.basket[0], hole.basket[1]);
-  const lie = thrown || { x: view.lie[0], y: view.lie[1], z: 0, heading: 0, color: (currentDisc() || view.disc).color, rim: (currentDisc() || view.disc).rim, air: false };
-  drawDisc(ctx, cam, lie.x, lie.y, lie.air ? lie.z : 0, lie.color, lie.rim, lie.heading, lie.air);
+  const cam = lookAt(hole, cameraStand(), w, h);
+  paintSky(ctx, w, h, cam.horizon);
+  paintGround(ctx, cam, hole);
+  const pines = hole.trees.map((tree) => {
+    const foot = cam.project(tree[0], tree[1], groundAt(hole, tree[0], tree[1]));
+    return { tree, foot };
+  }).filter((item) => !item.foot.behind).sort((a, b) => b.foot.depth - a.foot.depth);
+  const basketGround = groundAt(hole, hole.basket[0], hole.basket[1]);
+  const basketPoint = cam.project(hole.basket[0], hole.basket[1], basketGround);
+  pines.filter((item) => item.foot.depth > basketPoint.depth + 0.4).forEach((item) => drawPine(ctx, item.foot, item.tree[2]));
+  if (!basketPoint.behind) drawBasketAt(ctx, basketPoint, cam.dist);
+  pines.filter((item) => item.foot.depth <= basketPoint.depth + 0.4).forEach((item) => drawPine(ctx, item.foot, item.tree[2]));
+  if (view.status === "playing" && !anim) drawAimLine(ctx, cam, hole);
+  if (thrown && thrown.air) drawFlyingDisc(ctx, cam, thrown);
+  else drawInHand(ctx, w, h, currentDisc() || view.disc);
   drawWind(ctx, hole, w);
 }
 
-function frameBounds(bounds, lie) {
-  const [minX, minY, maxX, maxY] = bounds;
-  const pad = 14;
-  return [
-    Math.min(minX, lie[0] - pad),
-    Math.min(minY, lie[1] - pad),
-    Math.max(maxX, lie[0] + pad),
-    Math.max(maxY, lie[1] + pad),
+function cameraStand() {
+  const target = anim && anim.data.samples && anim.data.samples[0]
+    ? [anim.data.samples[0][0], anim.data.samples[0][1]]
+    : view.lie;
+  const now = performance.now();
+  if (!camLie) {
+    camLie = target.slice();
+    camFrom = target.slice();
+    camTo = target.slice();
+    camMoveStart = now;
+    return camLie;
+  }
+  const moved = !camTo || Math.hypot(camTo[0] - target[0], camTo[1] - target[1]) > 0.2;
+  if (moved) {
+    camFrom = camLie.slice();
+    camTo = target.slice();
+    camMoveStart = now;
+  }
+  const span = Math.hypot(camTo[0] - camFrom[0], camTo[1] - camFrom[1]);
+  const duration = Math.min(1800, 700 + span * 35);
+  const t = Math.min(1, (now - camMoveStart) / duration);
+  const eased = t * t * (3 - 2 * t);
+  camLie = [
+    camFrom[0] + (camTo[0] - camFrom[0]) * eased,
+    camFrom[1] + (camTo[1] - camFrom[1]) * eased,
   ];
+  return camLie;
 }
 
-function camera(bounds, width, height) {
-  const [minX, minY, maxX, maxY] = bounds;
-  const pad = 14;
-  const scale = Math.min((width - pad * 2) / (maxX - minX), (height - pad * 2) / (maxY - minY));
-  const worldW = (maxX - minX) * scale;
-  const worldH = (maxY - minY) * scale;
-  const left = (width - worldW) / 2;
-  const top = (height - worldH) / 2;
+function lookAt(hole, stand, width, height) {
+  const [lx, ly] = stand;
+  const bx = hole.basket[0];
+  const by = hole.basket[1];
+  let fx = bx - lx;
+  let fy = by - ly;
+  let dist = Math.hypot(fx, fy);
+  if (dist < 0.8) {
+    fx = bx - hole.tee[0];
+    fy = by - hole.tee[1];
+    dist = Math.hypot(fx, fy) || 1;
+  }
+  fx /= dist;
+  fy /= dist;
+  const rx = fy;
+  const ry = -fx;
+  const eyeZ = groundAt(hole, lx, ly) + 1.62;
+  const focal = Math.min(width, height) * 1.05;
+  const horizon = height * 0.4;
   return {
-    scale,
-    px(x, y) {
-      return [left + (x - minX) * scale, top + (maxY - y) * scale];
+    lx, ly, fx, fy, rx, ry, eyeZ, focal, horizon, width, height, dist,
+    project(x, y, z) {
+      const dx = x - lx;
+      const dy = y - ly;
+      const depth = dx * fx + dy * fy;
+      const lateral = dx * rx + dy * ry;
+      const safe = Math.max(0.55, depth);
+      const scale = focal / safe;
+      return {
+        x: width / 2 + lateral * scale,
+        y: horizon + (eyeZ - z) * scale,
+        scale,
+        depth: safe,
+        behind: depth < 0.45,
+      };
+    },
+    world(depth, lateral) {
+      return {
+        x: lx + fx * depth + rx * lateral,
+        y: ly + fy * depth + ry * lateral,
+      };
     },
   };
 }
 
-function trace(ctx, cam, points) {
-  ctx.beginPath();
-  points.forEach((point, index) => {
-    const [sx, sy] = cam.px(point[0], point[1]);
-    if (index === 0) ctx.moveTo(sx, sy);
-    else ctx.lineTo(sx, sy);
-  });
-  ctx.closePath();
+function groundAt(hole, x, y) {
+  const dx = hole.basket[0] - hole.tee[0];
+  const dy = hole.basket[1] - hole.tee[1];
+  const span = dx * dx + dy * dy;
+  let along = span < 1 ? 0 : ((x - hole.tee[0]) * dx + (y - hole.tee[1]) * dy) / span;
+  along = Math.max(0, Math.min(1, along));
+  return (hole.elevation || 0) * along;
 }
 
-function roundedBounds(ctx, cam, bounds, color) {
-  const [minX, minY, maxX, maxY] = bounds;
-  trace(ctx, cam, [[minX, minY], [maxX, minY], [maxX, maxY], [minX, maxY]]);
-  ctx.fillStyle = color;
-  ctx.fill();
+function paintSky(ctx, width, height, horizon) {
+  const sky = ctx.createLinearGradient(0, 0, 0, horizon + 30);
+  sky.addColorStop(0, "#7eb6e0");
+  sky.addColorStop(0.72, "#d5ecf8");
+  sky.addColorStop(1, "#e7f0d4");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, width, height);
 }
 
-function stripe(ctx, cam, poly, bounds) {
-  ctx.save();
-  trace(ctx, cam, poly);
-  ctx.clip();
-  const [, minY, , maxY] = bounds;
-  for (let y = Math.floor(minY); y < maxY; y += 8) {
-    ctx.fillStyle = Math.floor(y / 8) % 2 ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)";
-    const [x1, y1] = cam.px(bounds[0], y);
-    const [x2, y2] = cam.px(bounds[2], y + 4);
-    ctx.fillRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+function paintGround(ctx, cam, hole) {
+  const maxDepth = Math.max(36, cam.dist + 22);
+  const depths = [];
+  for (let i = 0; i <= 24; i += 1) {
+    const t = i / 24;
+    depths.push(1.15 + (maxDepth - 1.15) * t * t);
   }
-  ctx.restore();
-}
-
-function hatch(ctx, cam, poly) {
-  ctx.save();
-  trace(ctx, cam, poly);
-  ctx.clip();
-  ctx.strokeStyle = "rgba(120, 60, 40, 0.35)";
-  ctx.lineWidth = 1;
-  const start = cam.px(poly[0][0], poly[0][1]);
-  for (let i = -40; i < 80; i += 1) {
-    ctx.beginPath();
-    ctx.moveTo(start[0] + i * 10, start[1] - 200);
-    ctx.lineTo(start[0] + i * 10 + 80, start[1] + 200);
-    ctx.stroke();
+  const columns = 16;
+  const half = Math.max(26, cam.dist * 0.55);
+  for (let i = 0; i < depths.length - 1; i += 1) {
+    for (let j = 0; j < columns; j += 1) {
+      const d0 = depths[i];
+      const d1 = depths[i + 1];
+      const a0 = -half + (2 * half * j) / columns;
+      const a1 = -half + (2 * half * (j + 1)) / columns;
+      const midDepth = (d0 + d1) / 2;
+      const midLat = (a0 + a1) / 2;
+      const mid = cam.world(midDepth, midLat);
+      const corners = [cam.world(d0, a0), cam.world(d0, a1), cam.world(d1, a1), cam.world(d1, a0)];
+      const points = corners.map((point) => cam.project(point.x, point.y, groundAt(hole, point.x, point.y)));
+      if (points.some((point) => point.behind)) continue;
+      ctx.beginPath();
+      points.forEach((point, index) => (index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y)));
+      ctx.closePath();
+      ctx.fillStyle = groundColor(hole, mid.x, mid.y, midDepth, midLat, cam);
+      ctx.fill();
+    }
   }
-  ctx.restore();
 }
 
-function drawTee(ctx, cam, hole) {
-  const [sx, sy] = cam.px(hole.tee[0], hole.tee[1]);
-  const angle = Math.atan2(hole.basket[1] - hole.tee[1], hole.basket[0] - hole.tee[0]);
-  ctx.save();
-  ctx.translate(sx, sy);
-  ctx.rotate(-angle);
-  ctx.fillStyle = "#e6e1d4";
-  ctx.fillRect(-cam.scale * 1.6, -cam.scale * 0.7, cam.scale * 3.2, cam.scale * 1.4);
-  ctx.restore();
+function groundColor(hole, x, y, depth, lateral, cam) {
+  const wet = inWater(hole, x, y);
+  if (wet) {
+    const nearer = cam.world(Math.max(1, depth - 1.6), lateral);
+    if (!inWater(hole, nearer.x, nearer.y)) return "#d7f4f8";
+    return ((Math.floor(x / 3) + Math.floor(y / 2)) % 2) ? "#1787aa" : "#136f90";
+  }
+  if (hole.ob.some((poly) => pointInPoly(x, y, poly))) return "#c6a56a";
+  const straw = hole.trees.some((tree) => Math.hypot(x - tree[0], y - tree[1]) < tree[2] * 3.1);
+  const fair = hole.fairway.some((poly) => pointInPoly(x, y, poly));
+  if (straw && !fair) return (Math.floor(x + y) % 2) ? "#c4a15a" : "#a8843e";
+  if (fair) return (Math.floor(y / 5) % 2) ? "#4eae55" : "#3d9846";
+  return (Math.floor((x + y) / 7) % 2) ? "#1e5c34" : "#174828";
 }
 
-function drawTree(ctx, cam, tree) {
-  const [sx, sy] = cam.px(tree[0], tree[1]);
-  const radius = Math.max(5, tree[2] * cam.scale);
-  const gradient = ctx.createRadialGradient(sx - radius * 0.28, sy - radius * 0.32, radius * 0.15, sx, sy, radius);
-  gradient.addColorStop(0, "#67c56a");
-  gradient.addColorStop(0.62, "#217a38");
-  gradient.addColorStop(1, "#123f20");
-  ctx.fillStyle = gradient;
-  ctx.beginPath();
-  ctx.arc(sx, sy, radius, 0, Math.PI * 2);
-  ctx.fill();
+function inWater(hole, x, y) {
+  if (hole.dry.some((circle) => Math.hypot(x - circle[0], y - circle[1]) <= circle[2])) return false;
+  return hole.water.some((poly) => pointInPoly(x, y, poly));
+}
+
+function pointInPoly(x, y, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {
+    const xi = poly[i][0];
+    const yi = poly[i][1];
+    const xj = poly[j][0];
+    const yj = poly[j][1];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-9) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+function drawPine(ctx, foot, radius) {
+  if (foot.depth < 1.1 || foot.depth > 220) return;
+  const height = Math.max(7.5, radius * 3.1);
+  const s = foot.scale;
+  const h = height * s;
+  const base = foot.y;
+  const top = base - h;
+  const width = Math.max(6, radius * s * 1.35);
   ctx.fillStyle = "#6d4528";
-  ctx.beginPath();
-  ctx.arc(sx, sy, Math.max(1.6, radius * 0.16), 0, Math.PI * 2);
-  ctx.fill();
-}
-
-function drawBasket(ctx, cam, x, y) {
-  const [sx, sy] = cam.px(x, y);
-  // Fixed screen size. A long bare pole reads as a flagstick, so the pole stays inside the chains.
-  const s = Math.max(28, Math.min(46, cam.scale * 5.4));
-  const floor = sy;
-  const rim = floor - s * 0.4;
-  const chainTop = rim - s * 0.58;
-  const cap = chainTop - s * 0.1;
-  const neck = s * 0.15;
-  const halfRim = s * 0.42;
-  const halfFloor = s * 0.48;
-
-  ctx.fillStyle = "rgba(0,0,0,0.32)";
-  ctx.beginPath();
-  ctx.ellipse(sx, floor + s * 0.05, halfFloor * 0.9, s * 0.07, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.strokeStyle = "#8e968f";
-  ctx.lineWidth = Math.max(1.6, s * 0.05);
-  ctx.lineCap = "butt";
-  ctx.beginPath();
-  ctx.moveTo(sx, cap);
-  ctx.lineTo(sx, floor);
-  ctx.stroke();
-
-  const curtain = ctx.createLinearGradient(sx, chainTop, sx, rim);
-  curtain.addColorStop(0, "#f4f6f4");
-  curtain.addColorStop(1, "#8f9892");
-  ctx.fillStyle = curtain;
-  ctx.beginPath();
-  ctx.moveTo(sx - neck, chainTop);
-  ctx.lineTo(sx + neck, chainTop);
-  ctx.lineTo(sx + halfRim * 0.92, rim);
-  ctx.lineTo(sx - halfRim * 0.92, rim);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = "rgba(35, 48, 40, 0.55)";
-  ctx.lineWidth = Math.max(1, s * 0.03);
-  for (let i = 0; i < 6; i += 1) {
-    const t = (i + 0.5) / 6;
+  ctx.fillRect(foot.x - Math.max(1.2, width * 0.07), base - h * 0.22, Math.max(2.4, width * 0.14), h * 0.22);
+  [0, 1, 2].forEach((layer) => {
+    const y0 = top + h * (0.05 + layer * 0.2);
+    const y1 = y0 + h * 0.46;
+    const half = width * (0.46 + layer * 0.2);
     ctx.beginPath();
-    ctx.moveTo(sx + (t - 0.5) * neck * 2, chainTop);
-    ctx.lineTo(sx + (t - 0.5) * halfRim * 1.84, rim);
-    ctx.stroke();
-  }
-
-  ctx.fillStyle = "#f0c43a";
-  ctx.beginPath();
-  ctx.ellipse(sx, cap, neck * 0.9, s * 0.05, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = "#e7ebe8";
-  ctx.lineWidth = Math.max(1.3, s * 0.045);
-  ctx.beginPath();
-  ctx.ellipse(sx, chainTop, neck, s * 0.038, 0, 0, Math.PI * 2);
-  ctx.stroke();
-
-  ctx.fillStyle = "#f2c94b";
-  ctx.beginPath();
-  ctx.moveTo(sx - halfRim, rim);
-  ctx.lineTo(sx + halfRim, rim);
-  ctx.lineTo(sx + halfFloor, floor);
-  ctx.lineTo(sx - halfFloor, floor);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = "#6d4c0c";
-  ctx.lineWidth = Math.max(1, s * 0.04);
-  ctx.stroke();
-  for (let i = 1; i <= 2; i += 1) {
-    const t = i / 3;
-    const yLine = rim + (floor - rim) * t;
-    const half = halfRim + (halfFloor - halfRim) * t;
-    ctx.beginPath();
-    ctx.moveTo(sx - half, yLine);
-    ctx.lineTo(sx + half, yLine);
-    ctx.stroke();
-  }
-  ctx.strokeStyle = "#ffe58a";
-  ctx.lineWidth = Math.max(1.6, s * 0.055);
-  ctx.beginPath();
-  ctx.moveTo(sx - halfRim, rim);
-  ctx.lineTo(sx + halfRim, rim);
-  ctx.stroke();
-}
-
-function drawAim(ctx, cam) {
-  const aim = readAim();
-  const power = Math.min(1, Math.hypot(aim[0], aim[1]));
-  if (power < 0.05 || !view) return;
-  const angle = Math.atan2(-aim[1], aim[0]);
-  const disc = currentDisc() || view.disc;
-  const reach = power * (16 + disc.speed * 3.4);
-  const x = view.lie[0] + Math.cos(angle) * reach;
-  const y = view.lie[1] + Math.sin(angle) * reach;
-  const [sx, sy] = cam.px(view.lie[0], view.lie[1]);
-  const [ex, ey] = cam.px(x, y);
-  ctx.strokeStyle = "rgba(255,255,255,0.85)";
-  ctx.lineWidth = 2;
-  ctx.setLineDash([5, 5]);
-  ctx.beginPath();
-  ctx.moveTo(sx, sy);
-  ctx.lineTo(ex, ey);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillStyle = disc.color;
-  ctx.beginPath();
-  ctx.arc(ex, ey, 4, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-function drawTrail(ctx, cam, samples, color) {
-  if (!samples || samples.length < 2) return;
-  ctx.strokeStyle = color || "#fff";
-  ctx.globalAlpha = 0.55;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  samples.forEach((sample, index) => {
-    const [sx, sy] = cam.px(sample[0], sample[1]);
-    if (index === 0) ctx.moveTo(sx, sy);
-    else ctx.lineTo(sx, sy);
+    ctx.moveTo(foot.x, y0);
+    ctx.lineTo(foot.x + half, y1);
+    ctx.lineTo(foot.x - half, y1);
+    ctx.closePath();
+    ctx.fillStyle = ["#3d9a4c", "#21763a", "#145228"][layer];
+    ctx.fill();
   });
-  ctx.stroke();
-  ctx.globalAlpha = 1;
 }
 
-function drawDisc(ctx, cam, x, y, z, color, rim, heading, air) {
-  const [sx, sy] = cam.px(x, y);
-  const lift = air ? Math.max(0, z) * cam.scale * 0.45 : 0;
+function drawBasketAt(ctx, point, distance) {
+  // Upright basket: yellow band on top, chains hanging down, wire cage under the chains, pole into the ground.
+  const boosted = 540 / Math.pow(Math.max(distance, 2.4), 0.78);
+  const ppm = Math.max(point.scale, boosted);
+  const yAt = (meters) => point.y - meters * ppm;
+  const bandTop = 1.4;
+  const bandBot = 1.14;
+  const cageTop = 0.8;
+  const cageBot = 0.36;
+  const bandHalf = 0.32 * ppm;
+  const cageTopHalf = 0.3 * ppm;
+  const cageBotHalf = 0.34 * ppm;
+
   ctx.fillStyle = "rgba(0,0,0,0.28)";
   ctx.beginPath();
-  ctx.ellipse(sx, sy, 7, 3, heading, 0, Math.PI * 2);
+  ctx.ellipse(point.x, point.y + ppm * 0.04, ppm * 0.42, ppm * 0.1, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.save();
-  ctx.translate(sx, sy - lift);
-  ctx.rotate(-heading);
-  ctx.fillStyle = color || "#f4f0e6";
+
+  ctx.strokeStyle = "#b7c0c4";
+  ctx.lineWidth = Math.max(2, ppm * 0.045);
+  ctx.lineCap = "round";
   ctx.beginPath();
-  ctx.ellipse(0, 0, 8, 4.4, 0, 0, Math.PI * 2);
+  ctx.moveTo(point.x, point.y);
+  ctx.lineTo(point.x, yAt(bandTop));
+  ctx.stroke();
+
+  const chains = 9;
+  ctx.strokeStyle = "#3e4448";
+  ctx.lineWidth = Math.max(1.1, ppm * 0.018);
+  for (let i = 0; i < chains; i += 1) {
+    const t = chains === 1 ? 0.5 : i / (chains - 1);
+    const x0 = point.x + (t - 0.5) * bandHalf * 1.35;
+    const x1 = point.x + (t - 0.5) * cageTopHalf * 1.7;
+    const top = yAt(bandBot);
+    const bot = yAt(cageTop - 0.06);
+    ctx.beginPath();
+    ctx.moveTo(x0, top);
+    ctx.lineTo(x1, bot);
+    ctx.stroke();
+    const links = 5;
+    for (let link = 0; link < links; link += 1) {
+      const u = (link + 0.5) / links;
+      const lx = x0 + (x1 - x0) * u;
+      const ly = top + (bot - top) * u;
+      ctx.fillStyle = link % 2 ? "#6d7478" : "#2f3438";
+      ctx.beginPath();
+      ctx.ellipse(lx, ly, Math.max(1.3, ppm * 0.028), Math.max(2.1, ppm * 0.05), 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  ctx.fillStyle = "rgba(190, 198, 202, 0.28)";
+  ctx.beginPath();
+  ctx.moveTo(point.x - cageTopHalf, yAt(cageTop));
+  ctx.lineTo(point.x + cageTopHalf, yAt(cageTop));
+  ctx.lineTo(point.x + cageBotHalf, yAt(cageBot));
+  ctx.lineTo(point.x - cageBotHalf, yAt(cageBot));
+  ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = rim || "#fff";
+  ctx.strokeStyle = "#4d555a";
+  ctx.lineWidth = Math.max(1.2, ppm * 0.02);
+  ctx.stroke();
+  for (let i = 1; i <= 3; i += 1) {
+    const t = i / 4;
+    const y = yAt(cageTop + (cageBot - cageTop) * t);
+    const half = cageTopHalf + (cageBotHalf - cageTopHalf) * t;
+    ctx.beginPath();
+    ctx.moveTo(point.x - half, y);
+    ctx.lineTo(point.x + half, y);
+    ctx.stroke();
+  }
+  for (let i = 0; i < 7; i += 1) {
+    const t = i / 6;
+    ctx.beginPath();
+    ctx.moveTo(point.x + (t - 0.5) * cageTopHalf * 2, yAt(cageTop));
+    ctx.lineTo(point.x + (t - 0.5) * cageBotHalf * 2, yAt(cageBot));
+    ctx.stroke();
+  }
+  ctx.strokeStyle = "#d5dce0";
+  ctx.lineWidth = Math.max(1.4, ppm * 0.028);
+  ctx.beginPath();
+  ctx.moveTo(point.x - cageTopHalf, yAt(cageTop));
+  ctx.lineTo(point.x + cageTopHalf, yAt(cageTop));
+  ctx.stroke();
+
+  const top = yAt(bandTop);
+  const bot = yAt(bandBot);
+  ctx.fillStyle = "#f0b429";
+  ctx.beginPath();
+  ctx.moveTo(point.x - bandHalf, bot);
+  ctx.lineTo(point.x + bandHalf, bot);
+  ctx.lineTo(point.x + bandHalf * 0.92, top);
+  ctx.lineTo(point.x - bandHalf * 0.92, top);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#ffd15c";
+  ctx.beginPath();
+  ctx.ellipse(point.x, top, bandHalf * 0.92, Math.max(2, ppm * 0.055), 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#a8740d";
+  ctx.lineWidth = Math.max(1.2, ppm * 0.02);
+  ctx.stroke();
+  ctx.fillStyle = "#c98412";
+  ctx.beginPath();
+  ctx.ellipse(point.x, bot, bandHalf, Math.max(1.6, ppm * 0.04), 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawAimLine(ctx, cam, hole) {
+  const aim = readAim();
+  const power = Math.min(1, Math.hypot(aim[0], aim[1]));
+  if (power < 0.08) return;
+  const angle = Math.atan2(-aim[1], aim[0]);
+  const ax = Math.cos(angle);
+  const ay = Math.sin(angle);
+  const disc = currentDisc() || view.disc;
+  const reach = Math.max(5, power * (8 + disc.speed * 2.2));
+  ctx.strokeStyle = "rgba(255,255,255,0.85)";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([7, 7]);
+  ctx.beginPath();
+  let started = false;
+  for (let step = 2; step <= reach; step += Math.max(1.5, reach / 18)) {
+    const x = cam.lx + ax * step;
+    const y = cam.ly + ay * step;
+    const point = cam.project(x, y, groundAt(hole, x, y) + 0.05);
+    if (point.behind) continue;
+    if (!started) ctx.moveTo(point.x, point.y);
+    else ctx.lineTo(point.x, point.y);
+    started = true;
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawFlyingDisc(ctx, cam, lie) {
+  const hole = view.hole;
+  const point = cam.project(lie.x, lie.y, lie.z);
+  if (point.behind || point.depth < 1.4) return;
+  const radius = Math.max(4, 0.13 * point.scale);
+  ctx.fillStyle = "rgba(0,0,0,0.25)";
+  const shadow = cam.project(lie.x, lie.y, groundAt(hole, lie.x, lie.y));
+  if (!shadow.behind) {
+    ctx.beginPath();
+    ctx.ellipse(shadow.x, shadow.y, radius * 0.9, radius * 0.35, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.save();
+  ctx.translate(point.x, point.y);
+  ctx.rotate(-(lie.heading || 0));
+  ctx.fillStyle = lie.color || "#f4f0e6";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, radius, radius * 0.55, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = lie.rim || "#fff";
+  ctx.lineWidth = Math.max(1.5, radius * 0.18);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawInHand(ctx, width, height, disc) {
+  if (!disc) return;
+  ctx.save();
+  ctx.translate(width / 2, height - 18);
+  ctx.fillStyle = disc.color || "#f4f0e6";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 16, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = disc.rim || "#fff";
   ctx.lineWidth = 2;
   ctx.stroke();
   ctx.restore();
@@ -1160,15 +1314,14 @@ function drawWind(ctx, hole, width) {
   if (mag < 0.4) return;
   const cx = width - 36;
   const cy = 28;
-  ctx.strokeStyle = "rgba(255,255,255,0.8)";
-  ctx.fillStyle = "rgba(255,255,255,0.8)";
+  ctx.strokeStyle = "rgba(255,255,255,0.85)";
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(cx, cy);
   ctx.lineTo(cx + wx * 6, cy - wy * 6);
   ctx.stroke();
 }
-
 function flightPoint() {
   if (!anim || !anim.data.samples.length) return null;
   const samples = anim.data.samples;
