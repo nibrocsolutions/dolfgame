@@ -34,6 +34,7 @@ let camLie = null;
 let camFrom = null;
 let camTo = null;
 let camMoveStart = 0;
+let lookYaw = 0;
 
 function esc(value) {
   return String(value).replace(/[&<>"']/g, (ch) => ({
@@ -97,34 +98,63 @@ function readAim() {
   if (Math.hypot(ax, ay) > 0.08) {
     const mag = Math.min(1, Math.hypot(ax, ay));
     const norm = Math.hypot(ax, ay) || 1;
-    latched = aimFromStick((ax / norm) * mag, (ay / norm) * mag);
+    const softened = softenStick((ax / norm) * mag, (ay / norm) * mag);
+    const next = aimFromStick(softened[0], softened[1]);
+    latched = [
+      latched[0] * 0.62 + next[0] * 0.38,
+      latched[1] * 0.62 + next[1] * 0.38,
+    ];
   }
   return latched;
 }
 
+function softenStick(ax, ay) {
+  const mag = Math.hypot(ax, ay);
+  if (mag < 1e-4) return [0, 0];
+  let nx = ax / mag;
+  const ny = ay / mag;
+  nx = Math.sign(nx) * Math.pow(Math.abs(nx), 1.75);
+  const scale = Math.hypot(nx, ny) || 1;
+  return [(nx / scale) * mag, (ny / scale) * mag];
+}
+
 function aimFromStick(ax, ay) {
-  if (!view) return [ax, ay];
-  const lie = view.lie;
-  let fx = view.hole.basket[0] - lie[0];
-  let fy = view.hole.basket[1] - lie[1];
-  let dist = Math.hypot(fx, fy);
-  if (dist < 0.8) {
-    fx = view.hole.basket[0] - view.hole.tee[0];
-    fy = view.hole.basket[1] - view.hole.tee[1];
-    dist = Math.hypot(fx, fy) || 1;
-  }
-  fx /= dist;
-  fy /= dist;
-  const rx = fy;
-  const ry = -fx;
   const mag = Math.min(1, Math.hypot(ax, ay));
   const norm = Math.hypot(ax, ay) || 1;
   const forward = -ay / norm;
   const right = ax / norm;
+  const fx = Math.cos(lookYaw);
+  const fy = Math.sin(lookYaw);
+  const rx = fy;
+  const ry = -fx;
   const wx = fx * forward + rx * right;
   const wy = fy * forward + ry * right;
   const angle = Math.atan2(wy, wx);
   return [Math.cos(angle) * mag, -Math.sin(angle) * mag];
+}
+
+function wrapAngle(angle) {
+  let value = angle;
+  while (value > Math.PI) value -= Math.PI * 2;
+  while (value < -Math.PI) value += Math.PI * 2;
+  return value;
+}
+
+function faceLie(snapshot) {
+  const hole = snapshot.hole;
+  const dx = hole.basket[0] - snapshot.lie[0];
+  const dy = hole.basket[1] - snapshot.lie[1];
+  const toward = Math.atan2(dy, dx);
+  const bias = hole.look_bias || 0;
+  const fairway = Math.atan2(hole.basket[1] - hole.tee[1], hole.basket[0] - hole.tee[0]) + bias;
+  const gap = wrapAngle(toward - fairway);
+  // The fairway look leaves the basket off to one side. If it is behind you, turn until you can see it.
+  if (Math.abs(gap) > 0.85) return toward - Math.sign(gap || 1) * 0.32;
+  return fairway;
+}
+
+function aimAlongLook(power) {
+  return [Math.cos(lookYaw) * power, -Math.sin(lookYaw) * power];
 }
 
 function composeInput() {
@@ -498,7 +528,7 @@ function renderHome() {
       <div class="card">
         <div class="how">
           <p>The bag is Innova and MVP. Putter, midrange, or driver on every throw. Hyzer finishes left. Anhyzer finishes right. Flat lets the disc fly its own numbers.</p>
-          <p>Up on the stick throws toward the basket. The bright line is the throw. Push farther for a harder throw. Water and the road cost a penalty, and you throw again from the same lie.</p>
+          <p>Drag the fairway to look around. The basket is not always straight ahead. Up on the stick throws the way you are looking. The bright line is the throw. Inside 3 ft is a gimmie.</p>
           <p>Keyboard: arrows aim, J or Space throws. The first tap clicks. On an iPhone the mute switch silences the page.</p>
         </div>
         <div class="bag-preview">${molds}</div>
@@ -542,7 +572,8 @@ function showPlay(id, firstView) {
   release = firstView.release;
   kind = firstView.disc.kind;
   stick = [0, 0];
-  latched = pointAtBasket(firstView);
+  lookYaw = faceLie(firstView);
+  latched = aimAlongLook(firstView.putting ? 0.5 : 0.46);
   latchedKey = lieKey(firstView);
   seenThrow = firstView.throw_seq;
   anim = null;
@@ -584,6 +615,7 @@ function showPlay(id, firstView) {
       </div>
     </section>`;
   bindStick(app.querySelector("#aim"));
+  bindLook(app.querySelector("#course"));
   app.querySelector("#throw").addEventListener("pointerdown", (event) => {
     event.preventDefault();
     queueThrow();
@@ -600,16 +632,33 @@ function showPlay(id, firstView) {
   }
 }
 
-function lieKey(snapshot) {
-  return `${snapshot.hole_index}:${snapshot.lie[0]}:${snapshot.lie[1]}:${snapshot.status}`;
+function bindLook(canvas) {
+  let pointer = null;
+  let lastX = 0;
+  canvas.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    pointer = event.pointerId;
+    lastX = event.clientX;
+    canvas.setPointerCapture(pointer);
+  });
+  canvas.addEventListener("pointermove", (event) => {
+    if (event.pointerId !== pointer) return;
+    lookYaw -= (event.clientX - lastX) * 0.012;
+    lastX = event.clientX;
+    if (Math.hypot(stick[0], stick[1]) < 0.08) {
+      const power = Math.min(1, Math.hypot(latched[0], latched[1])) || 0.46;
+      latched = aimAlongLook(power);
+    }
+  });
+  const end = (event) => {
+    if (event.pointerId === pointer) pointer = null;
+  };
+  canvas.addEventListener("pointerup", end);
+  canvas.addEventListener("pointercancel", end);
 }
 
-function pointAtBasket(snapshot) {
-  const dx = snapshot.hole.basket[0] - snapshot.lie[0];
-  const dy = snapshot.hole.basket[1] - snapshot.lie[1];
-  const mag = Math.hypot(dx, dy) || 1;
-  const power = snapshot.putting ? 0.74 : 0.66;
-  return [(dx / mag) * power, (-dy / mag) * power];
+function lieKey(snapshot) {
+  return `${snapshot.hole_index}:${snapshot.lie[0]}:${snapshot.lie[1]}:${snapshot.status}`;
 }
 
 function paintBag() {
@@ -766,7 +815,8 @@ function accept(next) {
     selectedId = next.disc.id;
     release = next.release;
     kind = next.disc.kind;
-    latched = pointAtBasket(next);
+    lookYaw = faceLie(next);
+    latched = aimAlongLook(next.putting ? 0.5 : 0.46);
     latchedKey = lieKey(next);
     camLie = next.lie.slice();
     camFrom = camLie.slice();
@@ -784,6 +834,9 @@ function accept(next) {
 
 function startAnim(throwData) {
   const samples = throwData.samples || [];
+  if (samples.length > 1) {
+    lookYaw = Math.atan2(samples[1][1] - samples[0][1], samples[1][0] - samples[0][0]);
+  }
   const dt = (throwData.dt || 0.06) * 1000 / 1.25;
   anim = {
     data: throwData,
@@ -811,7 +864,8 @@ function frame(now) {
     if (view && !anim && Math.hypot(stick[0], stick[1]) < 0.08) {
       const key = lieKey(view);
       if (key !== latchedKey && view.status === "playing") {
-        latched = pointAtBasket(view);
+        lookYaw = faceLie(view);
+        latched = aimAlongLook(view.putting ? 0.5 : 0.46);
         latchedKey = key;
       }
     }
@@ -834,7 +888,8 @@ function frame(now) {
           showResult();
         }
         if (view) {
-          latched = pointAtBasket(view);
+          lookYaw = faceLie(view);
+          latched = aimAlongLook(view.putting ? 0.5 : 0.46);
           latchedKey = lieKey(view);
         }
       }
@@ -947,15 +1002,23 @@ function draw() {
   const cam = lookAt(hole, cameraStand(), w, h);
   paintSky(ctx, w, h, cam.horizon);
   paintGround(ctx, cam, hole);
-  const pines = hole.trees.map((tree) => {
+  const scenery = hole.trees.map((tree) => {
     const foot = cam.project(tree[0], tree[1], groundAt(hole, tree[0], tree[1]));
-    return { tree, foot };
-  }).filter((item) => !item.foot.behind).sort((a, b) => b.foot.depth - a.foot.depth);
+    return { kind: "pine", tree, foot };
+  }).concat((hole.bushes || []).map((bush) => {
+    const foot = cam.project(bush[0], bush[1], groundAt(hole, bush[0], bush[1]));
+    return { kind: "bush", bush, foot };
+  })).filter((item) => !item.foot.behind).sort((a, b) => b.foot.depth - a.foot.depth);
   const basketGround = groundAt(hole, hole.basket[0], hole.basket[1]);
   const basketPoint = cam.project(hole.basket[0], hole.basket[1], basketGround);
-  pines.filter((item) => item.foot.depth > basketPoint.depth + 0.4).forEach((item) => drawPine(ctx, item.foot, item.tree));
-  if (!basketPoint.behind) drawBasketAt(ctx, basketPoint, cam.dist);
-  pines.filter((item) => item.foot.depth <= basketPoint.depth + 0.4).forEach((item) => drawPine(ctx, item.foot, item.tree));
+  const drawOne = (item) => {
+    if (item.kind === "pine") drawPine(ctx, item.foot, item.tree);
+    else drawBush(ctx, item.foot, item.bush);
+  };
+  scenery.filter((item) => item.foot.depth > basketPoint.depth + 0.4).forEach(drawOne);
+  if (!basketPoint.behind) drawBasketAt(ctx, basketPoint, Math.hypot(hole.basket[0] - cam.lx, hole.basket[1] - cam.ly));
+  scenery.filter((item) => item.foot.depth <= basketPoint.depth + 0.4).forEach(drawOne);
+  markBasket(ctx, cam, hole, basketPoint, w);
   if (view.status === "playing" && !anim) drawAimLine(ctx, cam, hole);
   if (thrown && thrown.air) drawFlyingDisc(ctx, cam, thrown);
   else drawInHand(ctx, w, h, currentDisc() || view.disc);
@@ -1000,18 +1063,9 @@ function cameraStand() {
 
 function lookAt(hole, stand, width, height) {
   const [lx, ly] = stand;
-  const bx = hole.basket[0];
-  const by = hole.basket[1];
-  let fx = bx - lx;
-  let fy = by - ly;
-  let dist = Math.hypot(fx, fy);
-  if (dist < 0.8) {
-    fx = bx - hole.tee[0];
-    fy = by - hole.tee[1];
-    dist = Math.hypot(fx, fy) || 1;
-  }
-  fx /= dist;
-  fy /= dist;
+  const fx = Math.cos(lookYaw);
+  const fy = Math.sin(lookYaw);
+  const dist = Math.max(4, Math.hypot(hole.basket[0] - lx, hole.basket[1] - ly));
   const rx = fy;
   const ry = -fx;
   const eyeZ = groundAt(hole, lx, ly) + 1.62;
@@ -1049,7 +1103,13 @@ function groundAt(hole, x, y) {
   const span = dx * dx + dy * dy;
   let along = span < 1 ? 0 : ((x - hole.tee[0]) * dx + (y - hole.tee[1]) * dy) / span;
   along = Math.max(0, Math.min(1, along));
-  return (hole.elevation || 0) * along;
+  let height = (hole.elevation || 0) * along;
+  (hole.hills || []).forEach((hill) => {
+    const radius = hill[3] || 1;
+    const d = Math.hypot(x - hill[0], y - hill[1]) / radius;
+    if (d < 1) height += hill[2] * (1 - d * d);
+  });
+  return height;
 }
 
 function paintSky(ctx, width, height, horizon) {
@@ -1121,6 +1181,40 @@ function pointInPoly(x, y, poly) {
     if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-9) + xi) inside = !inside;
   }
   return inside;
+}
+
+function markBasket(ctx, cam, hole, point, width) {
+  const dx = hole.basket[0] - cam.lx;
+  const dy = hole.basket[1] - cam.ly;
+  const depth = dx * cam.fx + dy * cam.fy;
+  const lateral = dx * cam.rx + dy * cam.ry;
+  const off = point.behind || point.x < 28 || point.x > width - 28;
+  if (!off && depth > 1) return;
+  const onLeft = Math.atan2(lateral, depth) < 0;
+  ctx.fillStyle = "rgba(20, 32, 18, 0.72)";
+  ctx.font = "600 13px sans-serif";
+  const label = onLeft ? "‹ Basket" : "Basket ›";
+  const x = onLeft ? 12 : width - 12 - ctx.measureText(label).width;
+  ctx.fillText(label, x, cam.horizon + 22);
+}
+
+function drawBush(ctx, foot, bush) {
+  if (foot.depth < 1.1 || foot.depth > 170) return;
+  const s = foot.scale;
+  const width = Math.max(7, (bush[2] || 1.4) * s * 1.15);
+  const height = width * 0.72;
+  ctx.fillStyle = "#1f6a34";
+  ctx.beginPath();
+  ctx.ellipse(foot.x, foot.y - height * 0.42, width * 0.55, height * 0.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#3d9a4c";
+  ctx.beginPath();
+  ctx.ellipse(foot.x - width * 0.22, foot.y - height * 0.62, width * 0.32, height * 0.34, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#145228";
+  ctx.beginPath();
+  ctx.ellipse(foot.x + width * 0.18, foot.y - height * 0.28, width * 0.26, height * 0.26, 0, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function drawPine(ctx, foot, tree) {

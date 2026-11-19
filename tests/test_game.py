@@ -37,6 +37,48 @@ def test_eighteen_different_holes():
             assert _clear(hole["tee"], hole)
 
 
+def test_inside_three_feet_is_a_gimmie(monkeypatch):
+    from app.game import GIMMIE_METERS
+
+    assert abs(GIMMIE_METERS - 0.9144) < 0.001
+    basket = HOLES[0]["basket"]
+
+    def land_close(*_args, **_kwargs):
+        return {
+            "samples": [[0, 0, 1], [basket[0] + 0.5, basket[1], 0]],
+            "events": [],
+            "result": "safe",
+            "x": basket[0] + 0.5,
+            "y": basket[1],
+            "hit_tree": False,
+            "dt": 0.06,
+            "seconds": 0.4,
+        }
+
+    monkeypatch.setattr("app.game.simulate", land_close)
+    state = new_round(4)
+    step(state, {
+        "cmd": "input",
+        "aim": [0, -1],
+        "power": 0.4,
+        "pressed": ["throw"],
+        "disc": "aviar",
+        "release": "flat",
+    }, 0.1)
+    assert state["status"] == "holed"
+    assert state["message"] == "Gimmie."
+    assert state["scores"] == [1]
+
+
+def test_the_look_is_not_always_straight_at_the_basket():
+    biases = [hole["look_bias"] for hole in HOLES]
+    assert any(bias < -0.2 for bias in biases)
+    assert any(bias > 0.2 for bias in biases)
+    for hole in HOLES:
+        assert len(hole["bushes"]) >= 2
+        assert hole["hills"]
+
+
 def test_a_putt_finds_the_chains():
     state = new_round(3)
     basket = HOLES[0]["basket"]

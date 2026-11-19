@@ -87,7 +87,14 @@ def ground_height(hole: dict, x: float, y: float) -> float:
     else:
         along = ((x - tee[0]) * dx + (y - tee[1]) * dy) / span
     along = clamp(along, 0.0, 1.0)
-    return float(hole.get("elevation") or 0.0) * along
+    height = float(hole.get("elevation") or 0.0) * along
+    for hx, hy, rise, radius in hole.get("hills") or ():
+        if radius <= 0:
+            continue
+        d = math.hypot(x - hx, y - hy) / radius
+        if d < 1.0:
+            height += float(rise) * (1.0 - d * d)
+    return height
 
 
 def _yaw_velocity(vx: float, vy: float, yaw: float, dt: float) -> tuple[float, float]:
