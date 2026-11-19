@@ -97,6 +97,16 @@ body:not(.playing) {
 
 .lede { margin: 6px 0 18px; line-height: 1.4; color: #1c3b28; }
 
+.home.gate .lede { margin-bottom: 2px; }
+
+.grip {
+  margin: 0 0 18px;
+  font-weight: 650;
+  color: #14331f;
+}
+
+.hint { margin: 2px 0 0; color: #3d5c45; font-size: 0.9rem; }
+
 .card {
   background: rgba(244, 247, 239, 0.94);
   border-radius: 16px;
