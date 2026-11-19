@@ -476,10 +476,10 @@ function renderName() {
     <section class="home gate">
       <p class="eyebrow">Pine Bend</p>
       <h1>Chainline</h1>
-      <p class="lede">Eighteen holes. Pick a disc. Aim. Throw.</p>
+      <p class="lede">Type your name. The same name brings your rounds back.</p>
       <form id="join" class="card stack">
         <input id="name" maxlength="24" placeholder="Your name" autocomplete="nickname" enterkeyhint="done">
-        <button class="primary" type="submit">Tee off</button>
+        <button class="primary" type="submit">Continue</button>
         <p class="error" id="err"></p>
       </form>
     </section>`;
@@ -497,7 +497,7 @@ function renderName() {
       });
       playerId = created.id;
       localStorage.setItem(PLAYER_KEY, String(playerId));
-      await startRound(false);
+      await loadHome();
     } catch (error) {
       err.textContent = error.message;
     }

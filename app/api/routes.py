@@ -10,7 +10,7 @@ import json
 import random
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -110,16 +110,18 @@ def list_players(db: Session = Depends(get_db)) -> list[dict]:
     return [_player_out(player) for player in players]
 
 
-@router.post("/players", status_code=201)
-def create_player(body: PlayerIn, db: Session = Depends(get_db)) -> dict:
+@router.post("/players")
+def create_player(body: PlayerIn, response: Response, db: Session = Depends(get_db)) -> dict:
     name = _clean_name(body.name)
     taken = db.scalar(select(Player).where(func.lower(Player.name) == name.casefold()))
     if taken is not None:
-        raise HTTPException(status_code=409, detail="That name is already on this machine.")
+        response.status_code = 200
+        return _player_out(taken)
     player = Player(name=name)
     db.add(player)
     db.commit()
     db.refresh(player)
+    response.status_code = 201
     return _player_out(player)
 
 
@@ -129,7 +131,7 @@ def rename_player(player_id: int, body: PlayerPatch, db: Session = Depends(get_d
     name = _clean_name(body.name)
     taken = db.scalar(select(Player).where(func.lower(Player.name) == name.casefold(), Player.id != player.id))
     if taken is not None:
-        raise HTTPException(status_code=409, detail="That name is already on this machine.")
+        raise HTTPException(status_code=409, detail="That name is already taken.")
     player.name = name
     db.commit()
     return _player_out(player)

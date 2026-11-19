@@ -75,7 +75,7 @@ pytest
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/health` | Health check |
-| GET, POST | `/api/players` | Names on this machine |
+| GET, POST | `/api/players` | Find a player by name, or add one |
 | PATCH, DELETE | `/api/players/{id}` | Rename or remove a player |
 | GET | `/api/home?player_id=` | Record, bag, and the round in progress |
 | POST | `/api/rounds` | Resume, or start a round (`fresh`) |

@@ -38,9 +38,13 @@ def test_a_player_can_resume_the_same_round(client):
     assert brands == {"Innova", "MVP"}
 
 
-def test_duplicate_names_are_refused(client):
-    assert client.post("/api/players", json={"name": "Ada"}).status_code == 201
-    assert client.post("/api/players", json={"name": " ada "}).status_code == 409
+def test_the_same_name_comes_back(client):
+    first = client.post("/api/players", json={"name": "Ada"})
+    assert first.status_code == 201
+    again = client.post("/api/players", json={"name": " ada "})
+    assert again.status_code == 200
+    assert again.json()["id"] == first.json()["id"]
+    assert again.json()["name"] == "Ada"
 
 
 def test_the_page_says_throw(client):
