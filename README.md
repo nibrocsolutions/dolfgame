@@ -47,8 +47,8 @@ docker compose down
 
 ## Controls
 
-- The drive looks down the hole with the basket off to the left or the right. After that throw, the basket is in front of you. Drag the fairway if you need to look around. A marker on the edge points the way when the basket is off the screen.
-- The stick aims the way you are looking. Up the stick throws ahead. The line starts on the disc and curves the way that disc will fly: hyzer bends left, anhyzer bends right. The line eases, so a quick flick does not yank it. How far you push fills the Power bar above Throw, and that is how hard you throw. Inside the circle, a full push is a putt, not a drive.
+- The basket stays in front of you on every throw, including the drive. Drag the fairway if you need to look around. A marker on the edge points the way when the basket is off the screen.
+- The stick aims the way you are looking. Up the stick throws at the basket. Aim left or right and the line arcs that way, then back toward the basket. It starts on the disc. The line eases, so a quick flick does not yank it. How far you push fills the Power bar above Throw, and that is how hard you throw. Inside the circle, a full push is a putt, not a drive.
 - A lie inside 3 ft is a gimmie. The hole is finished.
 - Pines stand in the fairway and along it. They are tall trunks with a few limbs at the top. Only the trunk stops a disc, from the ground all the way up. Bushes sit on the sides and a few sit in the fairway. The ground rolls, with hills and low contours.
 - The disc menu picks the mold. Hyzer, Flat, and Anhyzer set the release. Keyboard 1, 2, and 3 jump to a putter, a midrange, and a driver.
