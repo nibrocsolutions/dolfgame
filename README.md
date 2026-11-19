@@ -40,16 +40,16 @@ docker compose down
 
 - Pick a name. The phone remembers it. Each name has its own card: rounds, best score, aces.
 - Play Pine Bend, a fixed 18-hole course. Par 61. The holes are not copies of one fairway. There is a tunnel, a creek carry, an island, a dogleg, an uphill, a downhill with a road, and a par 5 to close.
-- Choose a putter, a midrange, or a driver before each throw. The bag is five Innova molds (Aviar, Mako3, Roc3, Leopard3, Destroyer) and four MVP molds (Nomad, Envy, Hex, Wave).
+- Choose a disc from the menu before each throw. The bag mixes Innova and MVP putters, midranges, and drivers.
 - Throw right-hand backhand. Hyzer finishes left. Anhyzer finishes right. Flat lets the disc fly its own numbers. Wind and elevation are part of the hole.
 - Water and out of bounds cost the throw plus one penalty, and you throw again from the same lie. At par + 4 the hole is picked up.
 - Finish the card and the round is saved.
 
 ## Controls
 
-- The stick aims. Up the stick is up the map. How far you push is how hard you throw. Inside the circle, a full push is a putt, not a drive.
+- The stick aims. Up the stick throws toward the basket. Left and right are left and right of that look. How far you push is how hard you throw. Inside the circle, a full push is a putt, not a drive.
 - Throw sends the disc along that aim. If you have not aimed, Throw goes toward the basket at an easy pace.
-- Putter, Mid, and Driver switch the bag. Hyzer, Flat, and Anhyzer set the release.
+- The disc menu picks the mold. Hyzer, Flat, and Anhyzer set the release. Keyboard 1, 2, and 3 jump to a putter, a midrange, and a driver.
 - Keyboard: arrow keys aim, J or Space throws, 1 2 3 pick the type, Q W E pick hyzer, flat, anhyzer.
 
 ## Local development

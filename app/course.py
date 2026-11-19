@@ -230,7 +230,7 @@ HOLES: tuple[dict, ...] = (
         par=3,
         tee=(0.0, 0.0),
         basket=(0.0, 50.0),
-        blurb="Short enough for a putter. One tree, one clean look.",
+        blurb="Short enough for a putter. The pines sit off to the side.",
         wind=(0.4, 0.2),
         bounds=(-20.0, -6.0, 20.0, 66.0),
         trees=((8.0, 26.0, 2.3),),
@@ -337,6 +337,73 @@ HOLES: tuple[dict, ...] = (
         ),
     ),
 )
+
+def _segment_distance(a, b, x, y) -> float:
+    ax, ay = a
+    bx, by = b
+    dx, dy = bx - ax, by - ay
+    span = dx * dx + dy * dy
+    if span < 1:
+        return math.hypot(x - ax, y - ay)
+    t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / span))
+    return math.hypot(x - (ax + dx * t), y - (ay + dy * t))
+
+
+def _inside(x, y, poly) -> bool:
+    inside = False
+    j = len(poly) - 1
+    for i, (xi, yi) in enumerate(poly):
+        xj, yj = poly[j]
+        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / ((yj - yi) or 1e-9) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
+def _wet(hole, x, y) -> bool:
+    for circle in hole["dry"]:
+        if math.hypot(x - circle[0], y - circle[1]) <= circle[2]:
+            return False
+    return any(_inside(x, y, poly) for poly in hole["water"])
+
+
+def _plant(hole) -> None:
+    """Pines along the sides, off the straight line, so the look down the hole stays open."""
+    if hole["number"] in (2, 4, 6, 7, 9, 10, 14, 16, 18):
+        return
+    tee, basket = hole["tee"], hole["basket"]
+    dx, dy = basket[0] - tee[0], basket[1] - tee[1]
+    span = math.hypot(dx, dy) or 1.0
+    fx, fy = dx / span, dy / span
+    rx, ry = fy, -fx
+    extra: list[tuple[float, float, float]] = []
+    existing = list(hole["trees"])
+    side = 13.5 if span < 120 else 16.0
+    distance = 14.0
+    while distance < span + 8:
+        for lateral, radius in ((side, 2.7), (-side - 1.4, 2.5), (side + 5.0, 2.2)):
+            x = tee[0] + fx * distance + rx * lateral
+            y = tee[1] + fy * distance + ry * lateral
+            if _wet(hole, x, y):
+                continue
+            if _segment_distance(tee, basket, x, y) <= radius + 1.15:
+                continue
+            if any(math.hypot(x - tx, y - ty) < 3.4 for tx, ty, _radius in existing + extra):
+                continue
+            extra.append((round(x, 1), round(y, 1), radius))
+        distance += 16.0
+    hole["trees"] = tuple(existing + extra)
+
+
+for _planted in HOLES:
+    if _planted["number"] == 5 and not _planted["water"]:
+        _planted["water"] = (((-42.0, 76.0), (-22.0, 72.0), (-20.0, 118.0), (-44.0, 122.0)),)
+    if _planted["number"] == 12 and not _planted["water"]:
+        _planted["water"] = (((26.0, 84.0), (46.0, 80.0), (44.0, 124.0), (24.0, 128.0)),)
+    if _planted["number"] == 6:
+        _planted["trees"] = tuple(_planted["trees"]) + ((-16.0, 6.0, 2.6), (16.5, 7.0, 2.7), (-14.0, 11.0, 2.3))
+    _plant(_planted)
+
 
 assert len(HOLES) == COURSE_HOLES
 PAR_TOTAL = sum(hole["par"] for hole in HOLES)

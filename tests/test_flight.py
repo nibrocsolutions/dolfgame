@@ -41,7 +41,10 @@ def test_the_bag_mixes_innova_and_mvp():
     assert brands == {"Innova", "MVP"}
     kinds = {disc.kind for disc in BAG}
     assert kinds == {"putter", "midrange", "driver"}
-    assert sum(1 for disc in BAG if disc.kind == "putter") == 3
+    assert sum(1 for disc in BAG if disc.kind == "putter" and disc.brand == "Innova") >= 2
+    assert sum(1 for disc in BAG if disc.kind == "putter" and disc.brand == "MVP") >= 2
+    assert sum(1 for disc in BAG if disc.kind == "driver" and disc.brand == "Innova") >= 4
+    assert sum(1 for disc in BAG if disc.kind == "driver" and disc.brand == "MVP") >= 4
 
 
 def test_a_short_throw_finds_the_creek_and_a_mid_carries_it():
