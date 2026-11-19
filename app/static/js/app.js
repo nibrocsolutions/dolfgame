@@ -105,7 +105,7 @@ function readAim() {
     const now = performance.now();
     const dt = aimStamp ? Math.min(0.05, (now - aimStamp) / 1000) : 0.016;
     aimStamp = now;
-    const follow = 1 - Math.exp(-dt * 1.25);
+    const follow = 1 - Math.exp(-dt * 0.85);
     latched = [
       latched[0] + (next[0] - latched[0]) * follow,
       latched[1] + (next[1] - latched[1]) * follow,
@@ -117,30 +117,20 @@ function readAim() {
 function softenStick(ax, ay) {
   const mag = Math.hypot(ax, ay);
   if (mag < 1e-4) return [0, 0];
-  let nx = ax / mag;
-  const ny = ay / mag;
-  nx = Math.sign(nx) * Math.pow(Math.abs(nx), 2.45);
-  const scale = Math.hypot(nx, ny) || 1;
-  return [(nx / scale) * mag, (ny / scale) * mag];
+  const eased = Math.pow(mag, 1.35);
+  return [(ax / mag) * eased, (ay / mag) * eased];
 }
 
 function aimFromStick(ax, ay) {
   const mag = Math.min(1, Math.hypot(ax, ay));
-  const norm = Math.hypot(ax, ay) || 1;
-  const forward = -ay / norm;
-  const right = ax / norm;
-  const fx = Math.cos(lookYaw);
-  const fy = Math.sin(lookYaw);
-  const rx = fy;
-  const ry = -fx;
-  const wx = fx * forward + rx * right;
-  const wy = fy * forward + ry * right;
-  let angle = Math.atan2(wy, wx);
+  // A full sideways push leans about 29 degrees. The first half of the stick barely leaves center.
+  const lean = Math.sign(ax) * Math.pow(Math.abs(Math.max(-1, Math.min(1, ax))), 1.7) * 0.5;
+  let angle = lookYaw - lean;
   if (view && view.hole && view.lie) {
     const toward = Math.atan2(view.hole.basket[1] - view.lie[1], view.hole.basket[0] - view.lie[0]);
     const off = wrapAngle(angle - toward);
-    const hold = Math.exp(-(off / 0.36) * (off / 0.36));
-    angle = toward + off * (1 - hold * 0.62);
+    const hold = Math.exp(-(off / 0.2) * (off / 0.2));
+    angle = toward + off * (1 - hold * 0.28);
   }
   return [Math.cos(angle) * mag, -Math.sin(angle) * mag];
 }
@@ -476,10 +466,12 @@ function renderName() {
     <section class="home gate">
       <p class="eyebrow">Pine Bend</p>
       <h1>Chainline</h1>
-      <p class="lede">Type your name. The same name brings your rounds back.</p>
+      <p class="lede">Eighteen holes. Pick a disc. Aim. Throw.</p>
+      <p class="grip">(Grip it and Rip it!)</p>
       <form id="join" class="card stack">
         <input id="name" maxlength="24" placeholder="Your name" autocomplete="nickname" enterkeyhint="done">
         <button class="primary" type="submit">Continue</button>
+        <p class="hint">The same name brings your rounds back.</p>
         <p class="error" id="err"></p>
       </form>
     </section>`;
@@ -659,7 +651,7 @@ function bindLook(canvas) {
   });
   canvas.addEventListener("pointermove", (event) => {
     if (event.pointerId !== pointer) return;
-    lookYaw -= (event.clientX - lastX) * 0.012;
+    lookYaw -= (event.clientX - lastX) * 0.006;
     lastX = event.clientX;
     if (Math.hypot(stick[0], stick[1]) < 0.08) {
       const power = Math.min(1, Math.hypot(latched[0], latched[1])) || 0.46;
