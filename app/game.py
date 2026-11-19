@@ -14,6 +14,8 @@ from app.discs import DISCS, RELEASES
 from app.flight import simulate, stick_power
 
 PICKUP_OVER = 4
+# A lie inside 3 ft is close enough. The putt is given.
+GIMMIE_METERS = 3 / 3.280839895
 
 
 def new_round(seed: int) -> dict:
@@ -157,6 +159,10 @@ def _throw(state: dict, cmd: dict) -> None:
         _finish(state, hole, picked=True)
         state["message"] = "Picked up."
         return
+    if left <= GIMMIE_METERS:
+        _finish(state, hole, picked=False)
+        state["message"] = "Gimmie."
+        return
     tree = " Off a tree." if shot["hit_tree"] else ""
     if left < 3.5:
         state["message"] = f"Parked, {feet(left)} ft.{tree}"
@@ -267,6 +273,9 @@ def _hole_public(hole: dict) -> dict:
         "hill": hill,
         "wind": list(hole["wind"]),
         "blurb": hole["blurb"],
+        "look_bias": float(hole.get("look_bias") or 0.0),
+        "bushes": [list(bush) for bush in hole.get("bushes") or ()],
+        "hills": [list(hill_row) for hill_row in hole.get("hills") or ()],
     }
 
 

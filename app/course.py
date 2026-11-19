@@ -399,6 +399,63 @@ def _plant(hole) -> None:
     hole["trees"] = tuple(existing + extra)
 
 
+def _lay_ground(hole) -> None:
+    """A look that is not always straight at the basket, plus bushes and a few low hills."""
+    tee, basket = hole["tee"], hole["basket"]
+    dx, dy = basket[0] - tee[0], basket[1] - tee[1]
+    span = math.hypot(dx, dy) or 1.0
+    fx, fy = dx / span, dy / span
+    rx, ry = fy, -fx
+    # Radians. Positive puts the basket to the right of the first look.
+    bias = {
+        1: -0.22, 2: 0.16, 3: 0.32, 4: -0.38, 5: 0.26, 6: -0.14,
+        7: 0.34, 8: -0.28, 9: 0.38, 10: -0.18, 11: 0.3, 12: -0.36,
+        13: 0.12, 14: -0.34, 15: 0.24, 16: -0.2, 17: 0.18, 18: -0.38,
+    }
+    hole["look_bias"] = bias.get(hole["number"], 0.2)
+    bushes: list[tuple[float, float, float]] = []
+    hills: list[tuple[float, float, float, float]] = []
+
+    def place(distance, lateral, kind, size):
+        x = tee[0] + fx * distance + rx * lateral
+        y = tee[1] + fy * distance + ry * lateral
+        if distance < 8 or distance > span - 10:
+            return
+        if _wet(hole, x, y):
+            return
+        if kind == "bush":
+            if any(math.hypot(x - bx, y - by) < 3.2 for bx, by, _r in bushes):
+                return
+            bushes.append((round(x, 1), round(y, 1), size))
+        else:
+            hills.append((round(x, 1), round(y, 1), size, 18.0 if abs(lateral) < 6 else 22.0))
+
+    number = hole["number"]
+    side = 11.0
+    distance = 16.0
+    while distance < span - 8:
+        place(distance, side if (int(distance) + number) % 2 == 0 else -side, "bush", 1.5)
+        place(distance + 6, -(side + 3.5), "bush", 1.8)
+        distance += 18.0
+    # A few in the fairway, off the throwing line.
+    for along, lateral, size in ((0.34, 3.6, 1.3), (0.58, -4.1, 1.45), (0.74, 3.3, 1.2)):
+        if number % 3 == 0 and along > 0.7:
+            continue
+        place(span * along, lateral, "bush", size)
+    place(span * 0.4, 7.5 if number % 2 else -8.0, "hill", 1.8 + (number % 3) * 0.7)
+    place(span * 0.66, -6.5 if number % 2 else 9.0, "hill", 1.4 + (number % 4) * 0.45)
+    if span > 120:
+        place(span * 0.5, 4.2 if number % 2 else -4.5, "hill", 1.3)
+    for cx, cy, radius in hole["dry"]:
+        if radius < 8:
+            continue
+        bushes.append((round(cx + 6.0, 1), round(cy - 4.0, 1), 1.4))
+        bushes.append((round(cx - 5.5, 1), round(cy + 3.5, 1), 1.6))
+        hills.append((round(cx + 3.0, 1), round(cy + 5.0, 1), 1.2, 9.0))
+    hole["bushes"] = tuple(bushes)
+    hole["hills"] = tuple(hills)
+
+
 for _planted in HOLES:
     if _planted["number"] == 5 and not _planted["water"]:
         _planted["water"] = (((-42.0, 76.0), (-22.0, 72.0), (-20.0, 118.0), (-44.0, 122.0)),)
@@ -407,6 +464,7 @@ for _planted in HOLES:
     if _planted["number"] == 6:
         _planted["trees"] = tuple(_planted["trees"]) + ((-16.0, 6.0, 2.6), (16.5, 7.0, 2.7), (-14.0, 11.0, 2.3))
     _plant(_planted)
+    _lay_ground(_planted)
 
 
 assert len(HOLES) == COURSE_HOLES
