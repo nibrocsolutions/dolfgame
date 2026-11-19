@@ -9,15 +9,16 @@ from __future__ import annotations
 import json
 import random
 import time
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Response, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app.course import COURSE_NAME, PAR_TOTAL
+from app.course import COURSE_NAME, PAR_TOTAL, hole_by_index
 from app.database import SessionLocal, get_db
-from app.discs import BAG
+from app.discs import BAG, DISCS
 from app.game import dump_state, format_to_par, new_round, public_view, step, to_par
 from app.models import Player, Round, utcnow
 
@@ -222,13 +223,295 @@ def resolve_round(round_id: int, player_id: int, db: Session = Depends(get_db)) 
     }
 
 
+ROUND_STATUSES = {"playing", "holed", "finished", "carded", "abandoned"}
+OPEN_STATUSES = {"playing", "holed", "finished"}
+
+
+def _as_iso(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.isoformat()
+
+
+def _parse_time(value: object, fallback: datetime) -> datetime:
+    if value in (None, ""):
+        return fallback
+    if not isinstance(value, str):
+        raise HTTPException(status_code=400, detail="A date in that file is not readable.")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="A date in that file is not readable.") from None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _as_int(value: object, label: str, minimum: int | None = 0, maximum: int | None = None) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise HTTPException(status_code=400, detail=f"{label} is not a whole number.")
+    if (minimum is not None and value < minimum) or (maximum is not None and value > maximum):
+        raise HTTPException(status_code=400, detail=f"{label} is not a whole number.")
+    return value
+
+
+def _as_optional_int(value: object, label: str, minimum: int | None = 0, maximum: int | None = None) -> int | None:
+    if value is None:
+        return None
+    return _as_int(value, label, minimum, maximum)
+
+
+def _active_label(record: Round) -> dict | None:
+    if record.status not in OPEN_STATUSES:
+        return None
+    try:
+        state = _load(record)
+        hole = hole_by_index(int(state["hole"]))
+    except (KeyError, TypeError, ValueError, IndexError, json.JSONDecodeError):
+        return {"status": record.status, "hole": None, "hole_name": "", "label": "Round needs a look"}
+    number = int(hole["number"])
+    name = str(hole["name"])
+    status = str(state.get("status") or record.status)
+    if status == "holed":
+        label = f"Holed out · {name}"
+    elif status == "finished":
+        label = f"Card ready · {name}"
+    else:
+        label = f"Hole {number} · {name}"
+    return {"status": status, "hole": number, "hole_name": name, "label": label}
+
+
+def _roster(db: Session) -> dict:
+    players = db.scalars(select(Player).order_by(Player.created_at, Player.id)).all()
+    rounds = db.scalars(select(Round).order_by(Round.updated_at.desc(), Round.id.desc())).all()
+    by_player: dict[int, list[Round]] = {}
+    open_rounds = 0
+    for record in rounds:
+        by_player.setdefault(record.player_id, []).append(record)
+        if record.status in OPEN_STATUSES:
+            open_rounds += 1
+    saved_rounds = sum(player.rounds_played for player in players)
+    rows = []
+    for player in sorted(players, key=lambda item: (item.name.casefold(), item.id)):
+        owned = by_player.get(player.id, [])
+        active = None
+        for record in owned:
+            active = _active_label(record)
+            if active is not None:
+                break
+        last = owned[0].updated_at if owned else None
+        row = _player_out(player)
+        row["active"] = active
+        row["last_at"] = _as_iso(last)
+        rows.append(row)
+    return {
+        "summary": {
+            "players": len(players),
+            "rounds": len(rounds),
+            "open_rounds": open_rounds,
+            "saved_rounds": saved_rounds,
+            "aces": sum(player.aces for player in players),
+            "birdies": sum(player.birdies for player in players),
+        },
+        "players": rows,
+    }
+
+
+def _export_payload(db: Session) -> dict:
+    players = db.scalars(select(Player).order_by(Player.id)).all()
+    rounds = db.scalars(select(Round).order_by(Round.id)).all()
+    return {
+        "app": "chainline",
+        "course": COURSE_NAME,
+        "players": [
+            {
+                "id": player.id,
+                "name": player.name,
+                "rounds_played": player.rounds_played,
+                "best_strokes": player.best_strokes,
+                "best_to_par": player.best_to_par,
+                "aces": player.aces,
+                "birdies": player.birdies,
+                "created_at": _as_iso(player.created_at),
+            }
+            for player in players
+        ],
+        "rounds": [
+            {
+                "id": record.id,
+                "player_id": record.player_id,
+                "seed": record.seed,
+                "state_json": record.state_json,
+                "status": record.status,
+                "score": record.score,
+                "to_par": record.to_par,
+                "created_at": _as_iso(record.created_at),
+                "updated_at": _as_iso(record.updated_at),
+            }
+            for record in rounds
+        ],
+    }
+
+
+def _backup_state(raw: object, seed: int) -> dict:
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="A round in that file is missing its card.") from None
+    elif isinstance(raw, dict):
+        parsed = raw
+    else:
+        raise HTTPException(status_code=400, detail="A round in that file is missing its card.")
+    if not isinstance(parsed, dict):
+        raise HTTPException(status_code=400, detail="A round in that file is missing its card.")
+    try:
+        hole = _as_int(parsed.get("hole"), "A hole", maximum=17)
+        status = parsed.get("status")
+        lie = parsed.get("lie")
+        strokes = _as_int(parsed.get("strokes"), "A throw count")
+        scores = parsed.get("scores")
+        disc_id = parsed.get("disc_id")
+    except HTTPException:
+        raise
+    if status not in ROUND_STATUSES:
+        raise HTTPException(status_code=400, detail="A round in that file is missing its card.")
+    if not isinstance(lie, list) or len(lie) != 2 or not all(isinstance(item, (int, float)) and not isinstance(item, bool) for item in lie):
+        raise HTTPException(status_code=400, detail="A round in that file is missing its card.")
+    if not isinstance(scores, list) or len(scores) > 18:
+        raise HTTPException(status_code=400, detail="A round in that file is missing its card.")
+    if not isinstance(disc_id, str) or disc_id not in DISCS:
+        raise HTTPException(status_code=400, detail="A round uses a disc that is not in the bag.")
+    state = new_round(seed)
+    state.update(parsed)
+    state["seed"] = seed
+    state["hole"] = hole
+    state["status"] = status
+    state["lie"] = [float(lie[0]), float(lie[1])]
+    state["strokes"] = strokes
+    state["scores"] = [_as_int(score, "A hole score") for score in scores]
+    state["disc_id"] = disc_id
+    if state.get("release") not in {"hyzer", "flat", "anhyzer"}:
+        state["release"] = "flat"
+    return state
+
+
+def _import_backup(db: Session, body: dict) -> dict:
+    if body.get("app") not in (None, "chainline"):
+        raise HTTPException(status_code=400, detail="That file is not a Chainline backup.")
+    raw_players = body.get("players")
+    raw_rounds = body.get("rounds")
+    if not isinstance(raw_players, list) or not isinstance(raw_rounds, list):
+        raise HTTPException(status_code=400, detail="That file is not a Chainline backup.")
+    now = utcnow()
+    players: list[dict] = []
+    seen_ids: set[int] = set()
+    seen_names: set[str] = set()
+    for item in raw_players:
+        if not isinstance(item, dict):
+            raise HTTPException(status_code=400, detail="That file is not a Chainline backup.")
+        player_id = _as_int(item.get("id"), "A player id", minimum=1)
+        if player_id in seen_ids:
+            raise HTTPException(status_code=400, detail="Those player ids match.")
+        seen_ids.add(player_id)
+        name = _clean_name(item.get("name") if isinstance(item.get("name"), str) else "")
+        if name.casefold() in seen_names:
+            raise HTTPException(status_code=400, detail="That name is already taken.")
+        seen_names.add(name.casefold())
+        players.append(
+            {
+                "id": player_id,
+                "name": name,
+                "rounds_played": _as_int(item.get("rounds_played") or 0, "Saved rounds"),
+                "best_strokes": _as_optional_int(item.get("best_strokes"), "A best score", maximum=200),
+                "best_to_par": _as_optional_int(item.get("best_to_par"), "A best score", minimum=-80, maximum=200),
+                "aces": _as_int(item.get("aces") or 0, "Aces"),
+                "birdies": _as_int(item.get("birdies") or 0, "Birdies"),
+                "created_at": _parse_time(item.get("created_at"), now),
+            }
+        )
+    player_ids = {player["id"] for player in players}
+    rounds: list[dict] = []
+    seen_rounds: set[int] = set()
+    for item in raw_rounds:
+        if not isinstance(item, dict):
+            raise HTTPException(status_code=400, detail="That file is not a Chainline backup.")
+        round_id = _as_int(item.get("id"), "A round id", minimum=1)
+        if round_id in seen_rounds:
+            raise HTTPException(status_code=400, detail="Those round ids match.")
+        seen_rounds.add(round_id)
+        player_id = _as_int(item.get("player_id"), "A player id", minimum=1)
+        if player_id not in player_ids:
+            raise HTTPException(status_code=400, detail="A round points at a player who is not in the file.")
+        seed = _as_int(item.get("seed") or 1, "A round seed", minimum=1)
+        raw_state = item.get("state_json", item.get("state"))
+        state = _backup_state(raw_state, seed)
+        status = item.get("status") or state["status"]
+        if status not in ROUND_STATUSES:
+            raise HTTPException(status_code=400, detail="A round in that file is missing its card.")
+        state["status"] = status
+        created = _parse_time(item.get("created_at"), now)
+        rounds.append(
+            {
+                "id": round_id,
+                "player_id": player_id,
+                "seed": int(state["seed"]),
+                "state_json": dump_state(state),
+                "status": status,
+                "score": _as_optional_int(item.get("score"), "A card", maximum=200),
+                "to_par": _as_optional_int(item.get("to_par"), "A card", minimum=-80, maximum=200),
+                "created_at": created,
+                "updated_at": _parse_time(item.get("updated_at"), created),
+            }
+        )
+    db.execute(delete(Round))
+    db.execute(delete(Player))
+    for player in players:
+        db.add(Player(**player))
+    db.flush()
+    for record in rounds:
+        db.add(Round(**record))
+    db.commit()
+    return {"ok": True, "players": len(players), "rounds": len(rounds)}
+
+
 @router.get("/admin/summary")
 def admin_summary(db: Session = Depends(get_db)) -> dict:
+    roster = _roster(db)
+    summary = roster["summary"]
     return {
-        "players": db.scalar(select(func.count()).select_from(Player)) or 0,
-        "rounds": db.scalar(select(func.count()).select_from(Round)) or 0,
-        "aces": db.scalar(select(func.coalesce(func.sum(Player.aces), 0))) or 0,
+        "players": summary["players"],
+        "rounds": summary["rounds"],
+        "aces": summary["aces"],
     }
+
+
+@router.get("/admin/players")
+def admin_players(db: Session = Depends(get_db)) -> dict:
+    return _roster(db)
+
+
+@router.get("/admin/export")
+def admin_export(db: Session = Depends(get_db)) -> Response:
+    payload = json.dumps(_export_payload(db), indent=2)
+    return Response(
+        content=payload,
+        media_type="application/json",
+        headers={"Content-Disposition": 'attachment; filename="chainline-backup.json"'},
+    )
+
+
+@router.post("/admin/import")
+async def admin_import(request: Request, db: Session = Depends(get_db)) -> dict:
+    try:
+        body = await request.json()
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="That file is not JSON.") from None
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="That file is not a Chainline backup.")
+    return _import_backup(db, body)
 
 
 @router.websocket("/rounds/{round_id}/play")

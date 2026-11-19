@@ -47,6 +47,64 @@ def test_the_same_name_comes_back(client):
     assert again.json()["name"] == "Ada"
 
 
+def test_the_home_line_carries_the_grip(client):
+    script = client.get("/static/js/app.js").text
+    sentence = "Eighteen holes, each one its own shape. Aim with the stick. Throw."
+    after = script.split(sentence, 1)[1][:220]
+    assert "(Grip it and Rip it!)" in after
+
+
+def test_admin_lists_players_and_replaces_the_course(client):
+    created = client.post("/api/players", json={"name": "Ada"})
+    player_id = created.json()["id"]
+    client.post("/api/rounds", json={"player_id": player_id})
+    page = client.get("/admin")
+    assert page.status_code == 200
+    assert "Export" in page.text
+    assert "Import" in page.text
+    assert "/static/js/admin.js" in page.text
+    roster = client.get("/api/admin/players").json()
+    assert roster["summary"]["players"] == 1
+    assert roster["summary"]["open_rounds"] == 1
+    assert roster["players"][0]["name"] == "Ada"
+    assert roster["players"][0]["active"]["hole"] == 1
+    exported = client.get("/api/admin/export")
+    assert exported.status_code == 200
+    assert "chainline-backup.json" in exported.headers["content-disposition"]
+    backup = exported.json()
+    assert backup["app"] == "chainline"
+    assert backup["players"][0]["id"] == player_id
+    assert backup["rounds"][0]["player_id"] == player_id
+    refused = client.post("/api/admin/import", json={"app": "chainline", "players": [{"id": 1, "name": "Zoe"}], "rounds": [{"id": 1, "player_id": 1, "state_json": "nope"}]})
+    assert refused.status_code == 400
+    assert client.get("/api/players").json()[0]["name"] == "Ada"
+    other = {
+        "app": "chainline",
+        "players": [{
+            "id": 7,
+            "name": "Bea",
+            "rounds_played": 2,
+            "best_strokes": 58,
+            "best_to_par": -3,
+            "aces": 1,
+            "birdies": 4,
+            "created_at": "2026-01-01T00:00:00+00:00",
+        }],
+        "rounds": [],
+    }
+    imported = client.post("/api/admin/import", json=other)
+    assert imported.status_code == 200
+    assert imported.json() == {"ok": True, "players": 1, "rounds": 0}
+    listed = client.get("/api/players").json()
+    assert listed[0]["id"] == 7
+    assert listed[0]["best_label"] == "-3"
+    restored = client.post("/api/admin/import", json=backup)
+    assert restored.status_code == 200
+    home = client.get("/api/home", params={"player_id": player_id}).json()
+    assert home["player"]["name"] == "Ada"
+    assert home["active"]["hole"] == 1
+
+
 def test_the_page_says_throw(client):
     page = client.get("/").text
     script = client.get("/static/js/app.js").text

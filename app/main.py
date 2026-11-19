@@ -21,12 +21,20 @@ class FreshStaticFiles(StaticFiles):
         return response
 
 
-def index_html() -> str:
-    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
-    for asset in ("css/app.css", "js/app.js"):
+def stamped_html(name: str, assets: tuple[str, ...]) -> str:
+    html = (STATIC_DIR / name).read_text(encoding="utf-8")
+    for asset in assets:
         stamp = int((STATIC_DIR / asset).stat().st_mtime)
         html = html.replace(f"/static/{asset}", f"/static/{asset}?v={stamp}", 1)
     return html
+
+
+def index_html() -> str:
+    return stamped_html("index.html", ("css/app.css", "js/app.js"))
+
+
+def admin_html() -> str:
+    return stamped_html("admin.html", ("css/app.css", "js/admin.js"))
 
 
 @asynccontextmanager
@@ -44,3 +52,8 @@ app.mount("/static", FreshStaticFiles(directory=STATIC_DIR), name="static")
 @app.get("/")
 def index() -> HTMLResponse:
     return HTMLResponse(index_html(), headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/admin")
+def admin() -> HTMLResponse:
+    return HTMLResponse(admin_html(), headers={"Cache-Control": "no-cache"})

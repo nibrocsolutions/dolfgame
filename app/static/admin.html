@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#144d2c">
+  <title>Chainline admin</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+  <main class="admin-wrap">
+    <p class="eyebrow">Pine Bend</p>
+    <h1>Chainline</h1>
+    <p class="lede">Every player, then a file of the whole course. Saved is a finished card. Now is the round still going.</p>
+    <div class="card">
+      <div class="stats" id="totals"></div>
+      <div class="table-scroll">
+        <table class="card-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th class="num">Saved</th>
+              <th>Best</th>
+              <th class="num">Aces</th>
+              <th class="num">Birdies</th>
+              <th>Now</th>
+              <th>Last</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Export</h2>
+      <p class="how">Download every player and every round.</p>
+      <a class="primary" href="/api/admin/export">Export</a>
+    </div>
+    <form class="card stack" id="import-form">
+      <h2>Import</h2>
+      <p class="how">Replace every player and every round with a Chainline file. Player numbers stay as they are in the file.</p>
+      <input id="file" type="file" accept="application/json,.json">
+      <button class="primary" type="submit">Import</button>
+      <p class="error" id="err"></p>
+      <p class="hint" id="ok"></p>
+    </form>
+    <p><a class="quiet" href="/">Back to the course</a></p>
+  </main>
+  <script src="/static/js/admin.js"></script>
+</body>
+</html>
