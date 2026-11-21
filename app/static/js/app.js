@@ -79,7 +79,9 @@ document.addEventListener("keyup", (event) => {
 });
 
 document.addEventListener("touchmove", (event) => {
-  if (screen === "play") event.preventDefault();
+  if (screen !== "play") return;
+  if (event.target.closest && event.target.closest("#veil")) return;
+  event.preventDefault();
 }, { passive: false });
 
 function axis(negative, positive) {
@@ -993,15 +995,20 @@ function cardSheet(canSave) {
       <td class="num">${row.par}</td>
       <td class="num">${row.score == null ? "" : row.score}</td>
     </tr>`).join("");
+  const action = canSave
+    ? `<button class="primary" id="save" type="button">Finish the round</button><button id="close-card" type="button">Close</button>`
+    : `<button id="close-card" type="button">Back to the hole</button>`;
   return `
-    <div class="sheet">
+    <div class="sheet card-sheet">
       <h2>${esc(view.to_par_label)}</h2>
       <p>${view.total_strokes} throws through ${view.scores.length} holes. Par ${view.par_total}.</p>
-      <table class="card-table">
-        <thead><tr><th>#</th><th>Hole</th><th class="num">Par</th><th class="num">You</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-      ${canSave ? `<button class="primary" id="save" type="button">Save the round</button>` : `<button id="close-card" type="button">Back to the hole</button>`}
+      <div class="sheet-scroll">
+        <table class="card-table">
+          <thead><tr><th>#</th><th>Hole</th><th class="num">Par</th><th class="num">You</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div class="sheet-actions">${action}</div>
     </div>`;
 }
 
@@ -1011,10 +1018,13 @@ function bindCard(veil, canSave) {
   const save = veil.querySelector("#save");
   if (save && canSave) {
     save.addEventListener("click", async () => {
+      if (save.disabled) return;
+      save.disabled = true;
       try {
         await api(`/api/rounds/${roundId}/resolve?player_id=${playerId}`, { method: "POST" });
         boot();
       } catch (error) {
+        save.disabled = false;
         save.textContent = error.message;
       }
     });
