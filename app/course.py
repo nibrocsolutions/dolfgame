@@ -377,6 +377,9 @@ def _plant(hole) -> None:
     extra: list[tuple[float, float, float]] = []
     existing = list(hole["trees"])
     lanes = (2.7, -3.0, 5.4, -5.8, 8.6, -9.2, 12.8, -13.4)
+    # The Welcome is an open starter. The inner trunks were catching the first throw.
+    if hole["number"] == 1:
+        lanes = tuple(lateral for lateral in lanes if abs(lateral) >= 5)
     distance = 9.0
     guards = hole["number"] in (4, 9, 18)
     while distance < span + 2 and len(extra) < 72:
@@ -428,7 +431,8 @@ def _lay_ground(hole) -> None:
                 return
             bushes.append((round(x, 1), round(y, 1), size))
         else:
-            hills.append((round(x, 1), round(y, 1), size, 18.0 if abs(lateral) < 6 else 22.0))
+            # Beside the throw. A wider mound used to cover the tee shot and stop it short.
+            hills.append((round(x, 1), round(y, 1), size, 9.0))
 
     number = hole["number"]
     side = 11.0
@@ -442,11 +446,11 @@ def _lay_ground(hole) -> None:
         if number % 3 == 0 and along > 0.7:
             continue
         place(span * along, lateral, "bush", size)
-    place(span * 0.4, 7.5 if number % 2 else -8.0, "hill", 2.1 + (number % 3) * 0.55)
-    place(span * 0.66, -6.5 if number % 2 else 9.0, "hill", 1.7 + (number % 4) * 0.4)
-    place(span * 0.24, 13.0 if number % 2 else -12.0, "hill", 2.4)
-    place(span * 0.5, -11.5 if number % 2 else 12.5, "hill", 1.9)
-    place(span * 0.78, 8.5 if number % 2 else -9.5, "hill", 2.2)
+    place(span * 0.4, 16.0 if number % 2 else -16.0, "hill", 2.1 + (number % 3) * 0.55)
+    place(span * 0.66, -15.0 if number % 2 else 16.0, "hill", 1.7 + (number % 4) * 0.4)
+    place(span * 0.24, 18.0 if number % 2 else -18.0, "hill", 2.4)
+    place(span * 0.5, -17.0 if number % 2 else 17.0, "hill", 1.9)
+    place(span * 0.78, 15.0 if number % 2 else -16.0, "hill", 2.2)
     if span > 90:
         place(span * 0.36, -15.0, "hill", 1.6)
         place(span * 0.58, 14.0, "hill", 1.8)
