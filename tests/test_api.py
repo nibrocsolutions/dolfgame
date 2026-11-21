@@ -105,6 +105,15 @@ def test_admin_lists_players_and_replaces_the_course(client):
     assert home["active"]["hole"] == 1
 
 
+def test_the_finished_card_scrolls_and_can_be_finished(client):
+    script = client.get("/static/js/app.js").text
+    css = client.get("/static/css/app.css").text
+    assert "Finish the round" in script
+    assert "sheet-scroll" in script
+    assert "sheet-scroll" in css
+    assert 'closest("#veil")' in script
+
+
 def test_the_page_says_throw(client):
     page = client.get("/").text
     script = client.get("/static/js/app.js").text
