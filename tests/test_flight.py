@@ -57,6 +57,16 @@ def test_the_bag_mixes_innova_and_mvp():
     assert sum(1 for disc in BAG if disc.kind == "driver" and disc.brand == "MVP") >= 4
 
 
+def test_the_opening_throw_is_not_cut_short():
+    hole = HOLES[0]
+    tee, basket = hole["tee"], hole["basket"]
+    angle = math.atan2(basket[1] - tee[1], basket[0] - tee[0])
+    for name, power, minimum in (("mako3", 1.0, 50), ("mako3", 0.46, 30), ("destroyer", 1.0, 40)):
+        shot = simulate(DISCS[name], tee, angle, power, "flat", hole)
+        flown = math.hypot(shot["x"] - tee[0], shot["y"] - tee[1])
+        assert flown > minimum
+
+
 def test_a_short_throw_finds_the_creek_and_a_mid_carries_it():
     hole = HOLES[2]
     wet = False
