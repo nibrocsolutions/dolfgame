@@ -69,12 +69,13 @@ function roundsTable(list) {
       <td class="num">${round.holes}</td>
       <td class="num">${round.score == null ? "—" : round.score}</td>
       <td class="num">${esc(round.to_par_label || "—")}</td>
+      <td class="trash-cell"><button class="trash" type="button" data-delete="${round.id}" aria-label="Remove this round"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M9 3h6l1 2h5v2H3V5h5l1-2zm-1 6h2v10H8V9zm4 0h2v10h-2V9zm4 0h2v10h-2V9zM6 9h12l-1 12H7L6 9z"/></svg></button></td>
     </tr>`).join("");
   return `
     <p class="hint">Tap a round for the card.</p>
     <div class="table-scroll">
       <table class="card-table">
-        <thead><tr><th>When</th><th>Status</th><th class="num">Holes</th><th class="num">Score</th><th class="num">To par</th></tr></thead>
+        <thead><tr><th>When</th><th>Status</th><th class="num">Holes</th><th class="num">Score</th><th class="num">To par</th><th></th></tr></thead>
         <tbody>${body}</tbody>
       </table>
     </div>`;
@@ -93,14 +94,37 @@ function bindRoundRows(playerId, name) {
         err.textContent = "The course did not answer.";
       });
     };
-    row.addEventListener("click", open);
+    row.addEventListener("click", (event) => {
+      if (event.target.closest("[data-delete]")) return;
+      open();
+    });
     row.addEventListener("keydown", (event) => {
+      if (event.target.closest("[data-delete]")) return;
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
         open();
       }
     });
+    const trash = row.querySelector("[data-delete]");
+    trash.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (!window.confirm("Are you sure?")) return;
+      removeRound(playerId, Number(trash.dataset.delete), name).catch(() => {
+        err.textContent = "The course did not answer.";
+      });
+    });
   });
+}
+
+async function removeRound(playerId, roundId, name) {
+  err.textContent = "";
+  const response = await fetch(`/api/admin/rounds/${roundId}`, { method: "DELETE" });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    err.textContent = typeof body.detail === "string" ? body.detail : "The course did not answer.";
+    return;
+  }
+  await showPlayerRounds(playerId, name);
 }
 
 async function showPlayerRounds(playerId, name) {
@@ -118,7 +142,11 @@ async function showPlayerRounds(playerId, name) {
     <h2>${esc(name)}</h2>
     ${roundsTable(body.rounds || [])}
     <button class="quiet" id="rounds-back" type="button">Players</button>`;
-  detail.querySelector("#rounds-back").addEventListener("click", showRoster);
+  detail.querySelector("#rounds-back").addEventListener("click", () => {
+    load().catch(() => {
+      err.textContent = "The course did not answer.";
+    });
+  });
   bindRoundRows(playerId, name);
 }
 

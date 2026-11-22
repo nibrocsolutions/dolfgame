@@ -71,6 +71,62 @@ def _save(db: Session, record: Round, state: dict) -> None:
     db.commit()
 
 
+def _round_state(record: Round) -> dict | None:
+    try:
+        state = _load(record)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(state, dict):
+        return None
+    return state
+
+
+def _saved_rounds(db: Session, player: Player) -> list[Round]:
+    """Saved cards are the rounds the number counts. Repair the number from those rows."""
+    db.flush()
+    records = db.scalars(
+        select(Round)
+        .where(Round.player_id == player.id)
+        .order_by(Round.updated_at.desc(), Round.id.desc())
+    ).all()
+    saved: list[Round] = []
+    best_strokes = None
+    best_to_par = None
+    aces = 0
+    birdies = 0
+    for record in records:
+        state = _round_state(record)
+        if record.status != "carded" and (state or {}).get("status") != "carded":
+            continue
+        if record.status != "carded":
+            record.status = "carded"
+        if state is not None and state.get("status") != "carded":
+            state["status"] = "carded"
+            record.state_json = dump_state(state)
+        score = record.score
+        diff = record.to_par
+        if state is not None:
+            scores = state.get("scores") or []
+            whole = isinstance(scores, list) and scores and all(isinstance(item, int) and not isinstance(item, bool) for item in scores)
+            if score is None and whole:
+                score = sum(scores)
+                diff = to_par(state)
+                record.score = score
+                record.to_par = diff
+            aces += int(state.get("aces") or 0)
+            birdies += int(state.get("birdies") or 0)
+        if score is not None and (best_strokes is None or score < best_strokes):
+            best_strokes = score
+            best_to_par = diff
+        saved.append(record)
+    player.rounds_played = len(saved)
+    player.best_strokes = best_strokes
+    player.best_to_par = best_to_par if best_strokes is not None else None
+    player.aces = aces
+    player.birdies = birdies
+    return saved
+
+
 def _round_label(status: str) -> str:
     if status in ("playing", "holed"):
         return "On the course"
@@ -191,6 +247,8 @@ def delete_player(player_id: int, db: Session = Depends(get_db)) -> dict:
 @router.get("/home")
 def home(player_id: int, db: Session = Depends(get_db)) -> dict:
     player = _player(db, player_id)
+    _saved_rounds(db, player)
+    db.commit()
     active = db.scalar(
         select(Round)
         .where(Round.player_id == player.id, Round.status.in_(("playing", "holed", "finished")))
@@ -229,14 +287,11 @@ def start_round(body: RoundIn, db: Session = Depends(get_db)) -> dict:
 @router.get("/players/{player_id}/rounds")
 def player_rounds(player_id: int, db: Session = Depends(get_db)) -> dict:
     player = _player(db, player_id)
-    records = db.scalars(
-        select(Round)
-        .where(Round.player_id == player.id)
-        .order_by(Round.updated_at.desc(), Round.id.desc())
-    ).all()
+    saved = _saved_rounds(db, player)
+    db.commit()
     return {
         "player": {"id": player.id, "name": player.name, "rounds_played": player.rounds_played},
-        "rounds": [_round_line(record) for record in records],
+        "rounds": [_round_line(record) for record in saved],
     }
 
 
@@ -278,17 +333,15 @@ def resolve_round(round_id: int, player_id: int, db: Session = Depends(get_db)) 
         raise HTTPException(status_code=409, detail="The card is not full.")
     total = sum(state["scores"])
     diff = to_par(state)
-    player.rounds_played += 1
-    player.aces += int(state.get("aces") or 0)
-    player.birdies += int(state.get("birdies") or 0)
-    if player.best_strokes is None or total < player.best_strokes:
-        player.best_strokes = total
-        player.best_to_par = diff
     record.score = total
     record.to_par = diff
     record.status = "carded"
     state["status"] = "carded"
-    _save(db, record, state)
+    record.state_json = dump_state(state)
+    record.seed = int(state["seed"])
+    record.updated_at = utcnow()
+    _saved_rounds(db, player)
+    db.commit()
     return {
         "strokes": total,
         "to_par": diff,
@@ -361,6 +414,9 @@ def _active_label(record: Round) -> dict | None:
 
 def _roster(db: Session) -> dict:
     players = db.scalars(select(Player).order_by(Player.created_at, Player.id)).all()
+    for player in players:
+        _saved_rounds(db, player)
+    db.commit()
     rounds = db.scalars(select(Round).order_by(Round.updated_at.desc(), Round.id.desc())).all()
     by_player: dict[int, list[Round]] = {}
     open_rounds = 0
@@ -551,6 +607,23 @@ def _import_backup(db: Session, body: dict) -> dict:
         db.add(Round(**record))
     db.commit()
     return {"ok": True, "players": len(players), "rounds": len(rounds)}
+
+
+@router.delete("/admin/rounds/{round_id}")
+def admin_delete_round(round_id: int, db: Session = Depends(get_db)) -> dict:
+    record = db.get(Round, round_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="No such round.")
+    player = _player(db, record.player_id)
+    db.delete(record)
+    db.flush()
+    saved = _saved_rounds(db, player)
+    db.commit()
+    return {
+        "ok": True,
+        "player": _player_out(player),
+        "rounds": [_round_line(item) for item in saved],
+    }
 
 
 @router.get("/admin/summary")
