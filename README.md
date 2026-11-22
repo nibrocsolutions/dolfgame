@@ -86,6 +86,7 @@ pytest
 | GET | `/admin` | Player table, export, and import |
 | GET | `/api/admin/summary` | Player, round, and ace counts |
 | GET | `/api/admin/players` | Each player, with the round still going |
+| DELETE | `/api/admin/rounds/{id}` | Remove one saved round |
 | GET | `/api/admin/export` | Download every player and every round |
 | POST | `/api/admin/import` | Replace every player and every round |
 | WebSocket | `/api/rounds/{id}/play?player_id=` | Aim and throw in, hole state out |

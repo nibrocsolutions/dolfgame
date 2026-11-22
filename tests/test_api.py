@@ -182,7 +182,7 @@ def test_a_rounds_number_opens_every_round_and_its_card(client):
 
     from app.database import SessionLocal
     from app.game import dump_state
-    from app.models import Round
+    from app.models import Player, Round
 
     player_id = client.post("/api/players", json={"name": "Ada"}).json()["id"]
     started = client.post("/api/rounds", json={"player_id": player_id}).json()
@@ -203,19 +203,22 @@ def test_a_rounds_number_opens_every_round_and_its_card(client):
     assert fresh.status_code == 201
     open_id = fresh.json()["round"]["id"]
 
+    drifted = SessionLocal()
+    drifted.get(Player, player_id).rounds_played = 2
+    drifted.commit()
+    drifted.close()
     listed = client.get(f"/api/players/{player_id}/rounds")
     assert listed.status_code == 200
     body = listed.json()
     assert body["player"] == {"id": player_id, "name": "Ada", "rounds_played": 1}
-    assert [row["id"] for row in body["rounds"]] == [open_id, round_id]
-    assert body["rounds"][0]["label"] == "On the course"
-    assert body["rounds"][0]["holes"] == 0
-    assert body["rounds"][0]["score"] is None
-    saved_row = body["rounds"][1]
+    assert [row["id"] for row in body["rounds"]] == [round_id]
+    assert open_id not in [row["id"] for row in body["rounds"]]
+    saved_row = body["rounds"][0]
     assert saved_row["label"] == "Saved"
     assert saved_row["holes"] == 18
     assert saved_row["score"] == 54
     assert saved_row["to_par_label"] == "-7"
+    assert client.get("/api/home", params={"player_id": player_id}).json()["player"]["rounds_played"] == 1
 
     card = client.get(f"/api/rounds/{round_id}/card", params={"player_id": player_id})
     assert card.status_code == 200
@@ -236,5 +239,15 @@ def test_a_rounds_number_opens_every_round_and_its_card(client):
     admin = client.get("/static/js/admin.js").text
     assert "data-player" in admin
     assert "/card?player_id=" in admin
+    assert 'window.confirm("Are you sure?")' in admin
+    assert "data-delete" in admin
     page = client.get("/admin").text
     assert "The saved number opens" in page
+    removed = client.delete(f"/api/admin/rounds/{round_id}")
+    assert removed.status_code == 200
+    assert removed.json()["player"]["rounds_played"] == 0
+    assert removed.json()["rounds"] == []
+    again = client.get(f"/api/players/{player_id}/rounds").json()
+    assert again["rounds"] == []
+    assert again["player"]["rounds_played"] == 0
+    assert client.delete(f"/api/admin/rounds/{round_id}").status_code == 404

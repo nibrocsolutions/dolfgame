@@ -592,6 +592,17 @@ select#disc {
   text-underline-offset: 3px;
 }
 
+.trash {
+  background: transparent;
+  border: 0;
+  min-height: 0;
+  padding: 4px;
+  color: #8a3b32;
+  line-height: 0;
+}
+
+.trash-cell { width: 1%; text-align: right; }
+
 a.primary {
   display: inline-flex;
   align-items: center;
