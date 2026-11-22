@@ -175,3 +175,66 @@ def test_leaving_a_finished_hole_still_walks_on(client, monkeypatch):
     assert walked["status"] == "playing"
     assert walked["hole"]["number"] == 2
     assert walked["strokes"] == 0
+
+
+def test_a_rounds_number_opens_every_round_and_its_card(client):
+    import json
+
+    from app.database import SessionLocal
+    from app.game import dump_state
+    from app.models import Round
+
+    player_id = client.post("/api/players", json={"name": "Ada"}).json()["id"]
+    started = client.post("/api/rounds", json={"player_id": player_id}).json()
+    round_id = started["round"]["id"]
+    db = SessionLocal()
+    record = db.get(Round, round_id)
+    state = json.loads(record.state_json)
+    state["scores"] = [3] * 18
+    state["status"] = "finished"
+    state["hole"] = 17
+    record.state_json = dump_state(state)
+    record.status = "finished"
+    db.commit()
+    db.close()
+    saved = client.post(f"/api/rounds/{round_id}/resolve", params={"player_id": player_id})
+    assert saved.status_code == 200
+    fresh = client.post("/api/rounds", json={"player_id": player_id, "fresh": True})
+    assert fresh.status_code == 201
+    open_id = fresh.json()["round"]["id"]
+
+    listed = client.get(f"/api/players/{player_id}/rounds")
+    assert listed.status_code == 200
+    body = listed.json()
+    assert body["player"] == {"id": player_id, "name": "Ada", "rounds_played": 1}
+    assert [row["id"] for row in body["rounds"]] == [open_id, round_id]
+    assert body["rounds"][0]["label"] == "On the course"
+    assert body["rounds"][0]["holes"] == 0
+    assert body["rounds"][0]["score"] is None
+    saved_row = body["rounds"][1]
+    assert saved_row["label"] == "Saved"
+    assert saved_row["holes"] == 18
+    assert saved_row["score"] == 54
+    assert saved_row["to_par_label"] == "-7"
+
+    card = client.get(f"/api/rounds/{round_id}/card", params={"player_id": player_id})
+    assert card.status_code == 200
+    shown = card.json()
+    assert shown["player"] == "Ada"
+    assert len(shown["card"]) == 18
+    assert shown["card"][0]["number"] == 1
+    assert shown["card"][0]["score"] == 3
+    assert shown["card"][0]["par"] == HOLES[0]["par"]
+    assert shown["card"][17]["score"] == 3
+    assert shown["total_strokes"] == 54
+    other = client.post("/api/players", json={"name": "Bea"}).json()["id"]
+    assert client.get(f"/api/rounds/{round_id}/card", params={"player_id": other}).status_code == 404
+
+    home = client.get("/static/js/app.js").text
+    assert 'id="rounds"' in home
+    assert "/card?player_id=" in home
+    admin = client.get("/static/js/admin.js").text
+    assert "data-player" in admin
+    assert "/card?player_id=" in admin
+    page = client.get("/admin").text
+    assert "The saved number opens" in page

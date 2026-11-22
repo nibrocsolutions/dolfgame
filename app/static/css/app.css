@@ -136,6 +136,38 @@ body:not(.playing) {
   text-transform: uppercase;
 }
 
+.stats .stat-hit {
+  background: transparent;
+  border: 0;
+  min-height: 0;
+  padding: 4px;
+  border-radius: 12px;
+  width: 100%;
+  font: inherit;
+}
+
+.stats .stat-hit strong {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.home .card-table th,
+.home .card-table td { padding: 8px 10px 8px 0; }
+
+.round-status {
+  display: block;
+  color: var(--muted);
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+tr.pick { cursor: pointer; }
+
+tr.pick:hover td,
+tr.pick:focus td { background: rgba(29, 107, 52, 0.08); }
+
 .stack { display: flex; flex-direction: column; gap: 8px; }
 
 .how { color: #24382c; line-height: 1.45; font-size: 0.98rem; }
@@ -545,6 +577,20 @@ select#disc {
 }
 
 .admin-wrap .card-table td.name { white-space: normal; }
+
+.hidden { display: none; }
+
+.count-link {
+  background: transparent;
+  border: 0;
+  min-height: 0;
+  padding: 0;
+  color: #1d6b34;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 
 a.primary {
   display: inline-flex;

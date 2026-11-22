@@ -48,6 +48,19 @@ function esc(value) {
   }[ch]));
 }
 
+function when(iso) {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 async function api(path, options) {
   const response = await fetch(path, options);
   const body = await response.json().catch(() => ({}));
@@ -518,7 +531,7 @@ function renderHome() {
       <div class="card">
         <strong>${esc(player.name)}</strong>
         <div class="stats" style="margin-top:10px">
-          <div><strong>${player.rounds_played}</strong><span>Rounds</span></div>
+          <button class="stat-hit" id="rounds" type="button"><strong>${player.rounds_played}</strong><span>Rounds</span></button>
           <div><strong>${esc(best)}</strong><span>Best</span></div>
           <div><strong>${player.aces}</strong><span>Aces</span></div>
         </div>
@@ -540,6 +553,9 @@ function renderHome() {
         </div>
       </div>
     </section>`;
+  app.querySelector("#rounds").addEventListener("click", () => {
+    showRounds().catch(() => {});
+  });
   app.querySelector("#go").addEventListener("click", () => startRound(false));
   const fresh = app.querySelector("#fresh");
   if (fresh) fresh.addEventListener("click", () => startRound(true));
@@ -554,6 +570,119 @@ function renderHome() {
     localStorage.removeItem(PLAYER_KEY);
     playerId = null;
     renderName();
+  });
+}
+
+function roundsTable(rounds) {
+  if (!rounds.length) return `<p>No rounds yet.</p>`;
+  const body = rounds.map((round) => `
+    <tr class="pick" data-round="${round.id}" tabindex="0">
+      <td>${esc(when(round.created_at))}<span class="round-status">${esc(round.label)}</span></td>
+      <td class="num">${round.score == null ? "—" : round.score}</td>
+      <td class="num">${esc(round.to_par_label || "—")}</td>
+    </tr>`).join("");
+  return `
+    <p class="hint">Tap a round for the card.</p>
+    <div class="table-scroll">
+      <table class="card-table">
+        <thead><tr><th>When</th><th class="num">Score</th><th class="num">To par</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>`;
+}
+
+function bindRoundRows(onPick) {
+  app.querySelectorAll("[data-round]").forEach((row) => {
+    const open = () => onPick(Number(row.dataset.round));
+    row.addEventListener("click", open);
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        open();
+      }
+    });
+  });
+}
+
+async function showRounds() {
+  screen = "rounds";
+  document.body.classList.remove("playing");
+  closeSocket();
+  stopWind();
+  const player = home.player;
+  let body;
+  try {
+    body = await api(`/api/players/${playerId}/rounds`);
+  } catch (error) {
+    app.innerHTML = `
+      <section class="home">
+        <h1>Rounds</h1>
+        <div class="card">
+          <p class="error">${esc(error.message)}</p>
+          <button class="quiet" id="back" type="button">Back</button>
+        </div>
+      </section>`;
+    app.querySelector("#back").addEventListener("click", renderHome);
+    return;
+  }
+  app.innerHTML = `
+    <section class="home">
+      <p class="eyebrow">${esc(player.name)}</p>
+      <h1>Rounds</h1>
+      <div class="card">
+        ${roundsTable(body.rounds || [])}
+        <button class="quiet" id="back" type="button">Back</button>
+      </div>
+    </section>`;
+  app.querySelector("#back").addEventListener("click", renderHome);
+  bindRoundRows((id) => {
+    showRoundCard(id).catch(() => {});
+  });
+}
+
+async function showRoundCard(id) {
+  screen = "card";
+  let body;
+  try {
+    body = await api(`/api/rounds/${id}/card?player_id=${playerId}`);
+  } catch (error) {
+    app.innerHTML = `
+      <section class="home">
+        <h1>Card</h1>
+        <div class="card">
+          <p class="error">${esc(error.message)}</p>
+          <button class="quiet" id="back" type="button">Rounds</button>
+        </div>
+      </section>`;
+    app.querySelector("#back").addEventListener("click", () => {
+      showRounds().catch(() => {});
+    });
+    return;
+  }
+  const rows = (body.card || []).map((row) => `
+    <tr>
+      <td>${row.number}</td>
+      <td>${esc(row.name)}</td>
+      <td class="num">${row.par}</td>
+      <td class="num">${row.score == null ? "" : row.score}</td>
+    </tr>`).join("");
+  app.innerHTML = `
+    <section class="home">
+      <p class="eyebrow">${esc(when(body.created_at))} · ${esc(body.label)}</p>
+      <h1>${esc(body.to_par_label)}</h1>
+      <div class="card">
+        <p>${body.total_strokes} throws through ${body.holes_played} holes. Par ${body.par_total}.</p>
+        <div class="table-scroll">
+          <table class="card-table">
+            <thead><tr><th>#</th><th>Hole</th><th class="num">Par</th><th class="num">You</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+        <button class="quiet" id="back" type="button">Rounds</button>
+      </div>
+    </section>`;
+  app.querySelector("#back").addEventListener("click", () => {
+    showRounds().catch(() => {});
   });
 }
 

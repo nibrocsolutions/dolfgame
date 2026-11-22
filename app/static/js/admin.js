@@ -27,6 +27,7 @@ function when(iso) {
 }
 
 async function load() {
+  showRoster();
   const response = await fetch("/api/admin/players");
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -47,7 +48,7 @@ async function load() {
   rows.innerHTML = body.players.map((player) => `
     <tr>
       <td class="name">${esc(player.name)}</td>
-      <td class="num">${player.rounds_played}</td>
+      <td class="num"><button class="count-link" type="button" data-player="${player.id}" data-name="${esc(player.name)}">${player.rounds_played}</button></td>
       <td>${esc(player.best_label || "—")}</td>
       <td class="num">${player.aces}</td>
       <td class="num">${player.birdies}</td>
@@ -55,6 +56,112 @@ async function load() {
       <td>${esc(when(player.last_at))}</td>
     </tr>`).join("");
 }
+
+const roster = document.querySelector("#roster");
+const detail = document.querySelector("#detail");
+
+function roundsTable(list) {
+  if (!list.length) return `<p>No rounds yet.</p>`;
+  const body = list.map((round) => `
+    <tr class="pick" data-round="${round.id}" tabindex="0">
+      <td>${esc(when(round.created_at))}</td>
+      <td>${esc(round.label)}</td>
+      <td class="num">${round.holes}</td>
+      <td class="num">${round.score == null ? "—" : round.score}</td>
+      <td class="num">${esc(round.to_par_label || "—")}</td>
+    </tr>`).join("");
+  return `
+    <p class="hint">Tap a round for the card.</p>
+    <div class="table-scroll">
+      <table class="card-table">
+        <thead><tr><th>When</th><th>Status</th><th class="num">Holes</th><th class="num">Score</th><th class="num">To par</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>`;
+}
+
+function showRoster() {
+  detail.classList.add("hidden");
+  detail.innerHTML = "";
+  roster.classList.remove("hidden");
+}
+
+function bindRoundRows(playerId, name) {
+  detail.querySelectorAll("[data-round]").forEach((row) => {
+    const open = () => {
+      showCard(playerId, Number(row.dataset.round), name).catch(() => {
+        err.textContent = "The course did not answer.";
+      });
+    };
+    row.addEventListener("click", open);
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        open();
+      }
+    });
+  });
+}
+
+async function showPlayerRounds(playerId, name) {
+  err.textContent = "";
+  ok.textContent = "";
+  const response = await fetch(`/api/players/${playerId}/rounds`);
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    err.textContent = typeof body.detail === "string" ? body.detail : "The course did not answer.";
+    return;
+  }
+  roster.classList.add("hidden");
+  detail.classList.remove("hidden");
+  detail.innerHTML = `
+    <h2>${esc(name)}</h2>
+    ${roundsTable(body.rounds || [])}
+    <button class="quiet" id="rounds-back" type="button">Players</button>`;
+  detail.querySelector("#rounds-back").addEventListener("click", showRoster);
+  bindRoundRows(playerId, name);
+}
+
+async function showCard(playerId, roundId, name) {
+  err.textContent = "";
+  const response = await fetch(`/api/rounds/${roundId}/card?player_id=${playerId}`);
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    err.textContent = typeof body.detail === "string" ? body.detail : "The course did not answer.";
+    return;
+  }
+  const cardRows = (body.card || []).map((row) => `
+    <tr>
+      <td>${row.number}</td>
+      <td>${esc(row.name)}</td>
+      <td class="num">${row.par}</td>
+      <td class="num">${row.score == null ? "" : row.score}</td>
+    </tr>`).join("");
+  detail.innerHTML = `
+    <p class="eyebrow">${esc(when(body.created_at))} · ${esc(body.label)}</p>
+    <h2>${esc(body.to_par_label)} · ${esc(name)}</h2>
+    <p>${body.total_strokes} throws through ${body.holes_played} holes. Par ${body.par_total}.</p>
+    <div class="table-scroll">
+      <table class="card-table">
+        <thead><tr><th>#</th><th>Hole</th><th class="num">Par</th><th class="num">You</th></tr></thead>
+        <tbody>${cardRows}</tbody>
+      </table>
+    </div>
+    <button class="quiet" id="card-back" type="button">Rounds</button>`;
+  detail.querySelector("#card-back").addEventListener("click", () => {
+    showPlayerRounds(playerId, name).catch(() => {
+      err.textContent = "The course did not answer.";
+    });
+  });
+}
+
+rows.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-player]");
+  if (!button) return;
+  showPlayerRounds(Number(button.dataset.player), button.dataset.name).catch(() => {
+    err.textContent = "The course did not answer.";
+  });
+});
 
 document.querySelector("#import-form").addEventListener("submit", async (event) => {
   event.preventDefault();

@@ -71,6 +71,46 @@ def _save(db: Session, record: Round, state: dict) -> None:
     db.commit()
 
 
+def _round_label(status: str) -> str:
+    if status in ("playing", "holed"):
+        return "On the course"
+    if status == "finished":
+        return "Card ready"
+    if status == "carded":
+        return "Saved"
+    if status == "abandoned":
+        return "Left"
+    return "Round"
+
+
+def _round_line(record: Round) -> dict:
+    holes = 0
+    score = record.score
+    to_par_value = record.to_par
+    try:
+        state = _load(record)
+        scores = state.get("scores") or []
+        if isinstance(scores, list) and all(isinstance(item, int) and not isinstance(item, bool) for item in scores):
+            holes = len(scores)
+            if score is None and holes:
+                score = sum(scores)
+            if to_par_value is None and holes:
+                to_par_value = to_par(state)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        holes = 0
+    return {
+        "id": record.id,
+        "status": record.status,
+        "label": _round_label(record.status),
+        "holes": holes,
+        "score": score,
+        "to_par": to_par_value,
+        "to_par_label": None if to_par_value is None else format_to_par(to_par_value),
+        "created_at": _as_iso(record.created_at),
+        "updated_at": _as_iso(record.updated_at),
+    }
+
+
 def _summary(record: Round) -> dict:
     state = _load(record)
     hole = state["hole"]
@@ -186,10 +226,46 @@ def start_round(body: RoundIn, db: Session = Depends(get_db)) -> dict:
     return {"round": _summary(record), "view": public_view(state), "resumed": False}
 
 
+@router.get("/players/{player_id}/rounds")
+def player_rounds(player_id: int, db: Session = Depends(get_db)) -> dict:
+    player = _player(db, player_id)
+    records = db.scalars(
+        select(Round)
+        .where(Round.player_id == player.id)
+        .order_by(Round.updated_at.desc(), Round.id.desc())
+    ).all()
+    return {
+        "player": {"id": player.id, "name": player.name, "rounds_played": player.rounds_played},
+        "rounds": [_round_line(record) for record in records],
+    }
+
+
 @router.get("/rounds/{round_id}")
 def get_round(round_id: int, player_id: int, db: Session = Depends(get_db)) -> dict:
     record, _player_row = _round_for(db, round_id, player_id)
     return {"round": _summary(record), "view": public_view(_load(record))}
+
+
+@router.get("/rounds/{round_id}/card")
+def round_card(round_id: int, player_id: int, db: Session = Depends(get_db)) -> dict:
+    record, player = _round_for(db, round_id, player_id)
+    try:
+        view = public_view(_load(record))
+    except (KeyError, TypeError, ValueError, IndexError, json.JSONDecodeError):
+        raise HTTPException(status_code=400, detail="That card needs a look.") from None
+    return {
+        "id": record.id,
+        "player_id": player.id,
+        "player": player.name,
+        "status": record.status,
+        "label": _round_label(record.status),
+        "created_at": _as_iso(record.created_at),
+        "to_par_label": view["to_par_label"],
+        "total_strokes": view["total_strokes"],
+        "holes_played": len(view["scores"]),
+        "par_total": view["par_total"],
+        "card": view["card"],
+    }
 
 
 @router.post("/rounds/{round_id}/resolve")
