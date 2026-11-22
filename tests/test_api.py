@@ -269,3 +269,58 @@ def test_admin_can_remove_a_player_and_that_players_rounds(client):
     assert "data-what" in admin
     assert "data-when" in admin
     assert admin.count("Are you sure you want to remove") == 2
+
+
+def test_the_leaderboard_ranks_saved_rounds_and_names_aces(client):
+    import json
+
+    from app.database import SessionLocal
+    from app.game import dump_state
+    from app.models import Round
+
+    def save_card(player_id, scores, aces):
+        started = client.post("/api/rounds", json={"player_id": player_id, "fresh": True})
+        assert started.status_code == 201
+        round_id = started.json()["round"]["id"]
+        db = SessionLocal()
+        record = db.get(Round, round_id)
+        state = json.loads(record.state_json)
+        state["scores"] = scores
+        state["status"] = "finished"
+        state["hole"] = 17
+        state["aces"] = aces
+        record.state_json = dump_state(state)
+        record.status = "finished"
+        db.commit()
+        db.close()
+        saved = client.post(f"/api/rounds/{round_id}/resolve", params={"player_id": player_id})
+        assert saved.status_code == 200
+        return round_id
+
+    ada = client.post("/api/players", json={"name": "Ada"}).json()["id"]
+    bea = client.post("/api/players", json={"name": "Bea"}).json()["id"]
+    ace_round = save_card(ada, [1] + [3] * 17, 1)
+    other_round = save_card(ada, [4] * 18, 0)
+    bea_round = save_card(bea, [3] * 18, 0)
+    client.post("/api/rounds", json={"player_id": bea, "fresh": True})
+
+    board = client.get("/api/leaderboard")
+    assert board.status_code == 200
+    body = board.json()
+    assert [row["round_id"] for row in body["rounds"]] == [ace_round, bea_round, other_round]
+    assert [row["place"] for row in body["rounds"]] == [1, 2, 3]
+    assert body["rounds"][0]["player"] == "Ada"
+    assert body["rounds"][0]["score"] == 52
+    assert body["aces"] == [{
+        "player_id": ada,
+        "player": "Ada",
+        "round_id": ace_round,
+        "hole": HOLES[0]["number"],
+        "hole_name": HOLES[0]["name"],
+    }]
+    card = client.get(f"/api/rounds/{ace_round}/card", params={"player_id": ada})
+    assert card.status_code == 200
+    assert card.json()["card"][0]["score"] == 1
+    script = client.get("/static/js/app.js").text
+    assert 'id="board"' in script
+    assert "/api/leaderboard" in script
