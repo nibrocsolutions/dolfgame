@@ -239,7 +239,7 @@ def test_a_rounds_number_opens_every_round_and_its_card(client):
     admin = client.get("/static/js/admin.js").text
     assert "data-player" in admin
     assert "/card?player_id=" in admin
-    assert 'window.confirm("Are you sure?")' in admin
+    assert "Are you sure you want to remove" in admin
     assert "data-delete" in admin
     page = client.get("/admin").text
     assert "The saved number opens" in page
@@ -266,4 +266,6 @@ def test_admin_can_remove_a_player_and_that_players_rounds(client):
     assert client.get("/api/home", params={"player_id": other}).json()["player"]["name"] == "Bea"
     admin = client.get("/static/js/admin.js").text
     assert "data-remove-player" in admin
-    assert admin.count('window.confirm("Are you sure?")') == 2
+    assert "data-what" in admin
+    assert "data-when" in admin
+    assert admin.count("Are you sure you want to remove") == 2

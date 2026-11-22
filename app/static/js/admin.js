@@ -58,7 +58,7 @@ async function load() {
       <td class="num">${player.birdies}</td>
       <td>${esc(player.active ? player.active.label : "—")}</td>
       <td>${esc(when(player.last_at))}</td>
-      <td class="trash-cell">${trashButton(`data-remove-player="${player.id}"`, "Remove this player")}</td>
+      <td class="trash-cell">${trashButton(`data-remove-player="${player.id}" data-what="${esc(player.name)}"`, `Remove ${player.name}`)}</td>
     </tr>`).join("");
 }
 
@@ -74,7 +74,7 @@ function roundsTable(list) {
       <td class="num">${round.holes}</td>
       <td class="num">${round.score == null ? "—" : round.score}</td>
       <td class="num">${esc(round.to_par_label || "—")}</td>
-      <td class="trash-cell">${trashButton(`data-delete="${round.id}"`, "Remove this round")}</td>
+      <td class="trash-cell">${trashButton(`data-delete="${round.id}" data-when="${esc(when(round.created_at))}" data-label="${esc(round.label)}"`, "Remove this round")}</td>
     </tr>`).join("");
   return `
     <p class="hint">Tap a round for the card.</p>
@@ -113,7 +113,9 @@ function bindRoundRows(playerId, name) {
     const trash = row.querySelector("[data-delete]");
     trash.addEventListener("click", (event) => {
       event.stopPropagation();
-      if (!window.confirm("Are you sure?")) return;
+      const whenText = trash.dataset.when || "this";
+      const label = (trash.dataset.label || "saved").toLowerCase();
+      if (!window.confirm(`Are you sure you want to remove ${name}'s ${label} round from ${whenText}?`)) return;
       removeRound(playerId, Number(trash.dataset.delete), name).catch(() => {
         err.textContent = "The course did not answer.";
       });
@@ -203,7 +205,8 @@ async function removePlayer(playerId) {
 rows.addEventListener("click", (event) => {
   const remove = event.target.closest("[data-remove-player]");
   if (remove) {
-    if (!window.confirm("Are you sure?")) return;
+    const who = remove.dataset.what || "this player";
+    if (!window.confirm(`Are you sure you want to remove ${who}?`)) return;
     removePlayer(Number(remove.dataset.removePlayer)).catch(() => {
       err.textContent = "The course did not answer.";
     });
