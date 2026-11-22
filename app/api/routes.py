@@ -283,6 +283,73 @@ def start_round(body: RoundIn, db: Session = Depends(get_db)) -> dict:
     return {"round": _summary(record), "view": public_view(state), "resumed": False}
 
 
+def _ace_holes(state: dict | None) -> list[int]:
+    if not state:
+        return []
+    scores = state.get("scores") or []
+    if not isinstance(scores, list):
+        return []
+    found = []
+    for index, score in enumerate(scores):
+        if isinstance(score, bool) or not isinstance(score, int) or score != 1:
+            continue
+        if index < 18:
+            found.append(index)
+    return found
+
+
+@router.get("/leaderboard")
+def leaderboard(db: Session = Depends(get_db)) -> dict:
+    players = db.scalars(select(Player).order_by(Player.id)).all()
+    rounds = []
+    aces = []
+    for player in players:
+        saved = _saved_rounds(db, player)
+        named = False
+        for record in saved:
+            if record.score is None:
+                continue
+            rounds.append(
+                {
+                    "round_id": record.id,
+                    "player_id": player.id,
+                    "player": player.name,
+                    "score": record.score,
+                    "to_par": record.to_par,
+                    "to_par_label": None if record.to_par is None else format_to_par(record.to_par),
+                    "created_at": _as_iso(record.created_at),
+                }
+            )
+            for index in _ace_holes(_round_state(record)):
+                hole = hole_by_index(index)
+                named = True
+                aces.append(
+                    {
+                        "player_id": player.id,
+                        "player": player.name,
+                        "round_id": record.id,
+                        "hole": hole["number"],
+                        "hole_name": hole["name"],
+                    }
+                )
+        if player.aces and not named:
+            aces.append(
+                {
+                    "player_id": player.id,
+                    "player": player.name,
+                    "round_id": saved[0].id if saved else None,
+                    "hole": None,
+                    "hole_name": "",
+                }
+            )
+    db.commit()
+    rounds.sort(key=lambda row: (row["score"], row["to_par"] if row["to_par"] is not None else 0, row["player"].casefold(), row["round_id"]))
+    for place, row in enumerate(rounds, start=1):
+        row["place"] = place
+    aces.sort(key=lambda row: (row["player"].casefold(), row["hole"] or 0, row["round_id"] or 0))
+    return {"rounds": rounds, "aces": aces}
+
+
 @router.get("/players/{player_id}/rounds")
 def player_rounds(player_id: int, db: Session = Depends(get_db)) -> dict:
     player = _player(db, player_id)

@@ -79,6 +79,7 @@ pytest
 | PATCH, DELETE | `/api/players/{id}` | Rename or remove a player |
 | GET | `/api/home?player_id=` | Record, bag, and the round in progress |
 | GET | `/api/players/{id}/rounds` | That player's rounds |
+| GET | `/api/leaderboard` | Best saved rounds, and who aced a hole |
 | POST | `/api/rounds` | Resume, or start a round (`fresh`) |
 | GET | `/api/rounds/{id}?player_id=` | The current hole |
 | GET | `/api/rounds/{id}/card?player_id=` | That round's card |
