@@ -26,6 +26,10 @@ function when(iso) {
   });
 }
 
+function trashButton(attrs, label) {
+  return `<button class="trash" type="button" ${attrs} aria-label="${esc(label)}"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M9 3h6l1 2h5v2H3V5h5l1-2zm-1 6h2v10H8V9zm4 0h2v10h-2V9zm4 0h2v10h-2V9zM6 9h12l-1 12H7L6 9z"/></svg></button>`;
+}
+
 async function load() {
   showRoster();
   const response = await fetch("/api/admin/players");
@@ -42,7 +46,7 @@ async function load() {
     <div><strong>${summary.aces}</strong><span>Aces</span></div>
     <div><strong>${summary.birdies}</strong><span>Birdies</span></div>`;
   if (!body.players.length) {
-    rows.innerHTML = `<tr><td colspan="7">No players yet.</td></tr>`;
+    rows.innerHTML = `<tr><td colspan="8">No players yet.</td></tr>`;
     return;
   }
   rows.innerHTML = body.players.map((player) => `
@@ -54,6 +58,7 @@ async function load() {
       <td class="num">${player.birdies}</td>
       <td>${esc(player.active ? player.active.label : "—")}</td>
       <td>${esc(when(player.last_at))}</td>
+      <td class="trash-cell">${trashButton(`data-remove-player="${player.id}"`, "Remove this player")}</td>
     </tr>`).join("");
 }
 
@@ -69,7 +74,7 @@ function roundsTable(list) {
       <td class="num">${round.holes}</td>
       <td class="num">${round.score == null ? "—" : round.score}</td>
       <td class="num">${esc(round.to_par_label || "—")}</td>
-      <td class="trash-cell"><button class="trash" type="button" data-delete="${round.id}" aria-label="Remove this round"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M9 3h6l1 2h5v2H3V5h5l1-2zm-1 6h2v10H8V9zm4 0h2v10h-2V9zm4 0h2v10h-2V9zM6 9h12l-1 12H7L6 9z"/></svg></button></td>
+      <td class="trash-cell">${trashButton(`data-delete="${round.id}"`, "Remove this round")}</td>
     </tr>`).join("");
   return `
     <p class="hint">Tap a round for the card.</p>
@@ -183,7 +188,27 @@ async function showCard(playerId, roundId, name) {
   });
 }
 
+async function removePlayer(playerId) {
+  err.textContent = "";
+  ok.textContent = "";
+  const response = await fetch(`/api/players/${playerId}`, { method: "DELETE" });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    err.textContent = typeof body.detail === "string" ? body.detail : "The course did not answer.";
+    return;
+  }
+  await load();
+}
+
 rows.addEventListener("click", (event) => {
+  const remove = event.target.closest("[data-remove-player]");
+  if (remove) {
+    if (!window.confirm("Are you sure?")) return;
+    removePlayer(Number(remove.dataset.removePlayer)).catch(() => {
+      err.textContent = "The course did not answer.";
+    });
+    return;
+  }
   const button = event.target.closest("[data-player]");
   if (!button) return;
   showPlayerRounds(Number(button.dataset.player), button.dataset.name).catch(() => {
