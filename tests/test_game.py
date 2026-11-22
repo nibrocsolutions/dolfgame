@@ -68,6 +68,7 @@ def test_inside_three_feet_is_a_gimmie(monkeypatch):
     assert state["status"] == "holed"
     assert state["message"] == "Gimmie."
     assert state["scores"] == [1]
+    assert state["last_throw"]["events"][-1] == {"t": 0.4, "kind": "chains"}
 
 
 def test_every_hole_has_bushes_and_a_hill():

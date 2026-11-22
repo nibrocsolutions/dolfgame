@@ -162,6 +162,7 @@ def _throw(state: dict, cmd: dict) -> None:
     if left <= GIMMIE_METERS:
         _finish(state, hole, picked=False)
         state["message"] = "Gimmie."
+        state["last_throw"]["events"].append({"t": shot["seconds"], "kind": "chains"})
         return
     tree = " Off a tree." if shot["hit_tree"] else ""
     if left < 3.5:
