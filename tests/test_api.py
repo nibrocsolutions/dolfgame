@@ -251,3 +251,19 @@ def test_a_rounds_number_opens_every_round_and_its_card(client):
     assert again["rounds"] == []
     assert again["player"]["rounds_played"] == 0
     assert client.delete(f"/api/admin/rounds/{round_id}").status_code == 404
+
+
+def test_admin_can_remove_a_player_and_that_players_rounds(client):
+    player_id = client.post("/api/players", json={"name": "Ada"}).json()["id"]
+    other = client.post("/api/players", json={"name": "Bea"}).json()["id"]
+    client.post("/api/rounds", json={"player_id": player_id})
+    removed = client.delete(f"/api/players/{player_id}")
+    assert removed.status_code == 200
+    assert removed.json() == {"ok": True}
+    names = [player["name"] for player in client.get("/api/players").json()]
+    assert names == ["Bea"]
+    assert client.get(f"/api/players/{player_id}/rounds").status_code == 404
+    assert client.get("/api/home", params={"player_id": other}).json()["player"]["name"] == "Bea"
+    admin = client.get("/static/js/admin.js").text
+    assert "data-remove-player" in admin
+    assert admin.count('window.confirm("Are you sure?")') == 2

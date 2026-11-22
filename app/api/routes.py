@@ -237,8 +237,7 @@ def rename_player(player_id: int, body: PlayerPatch, db: Session = Depends(get_d
 @router.delete("/players/{player_id}")
 def delete_player(player_id: int, db: Session = Depends(get_db)) -> dict:
     player = _player(db, player_id)
-    for old in db.scalars(select(Round).where(Round.player_id == player.id)).all():
-        db.delete(old)
+    db.execute(delete(Round).where(Round.player_id == player.id))
     db.delete(player)
     db.commit()
     return {"ok": True}
