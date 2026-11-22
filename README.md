@@ -78,8 +78,10 @@ pytest
 | GET, POST | `/api/players` | Find a player by name, or add one |
 | PATCH, DELETE | `/api/players/{id}` | Rename or remove a player |
 | GET | `/api/home?player_id=` | Record, bag, and the round in progress |
+| GET | `/api/players/{id}/rounds` | That player's rounds |
 | POST | `/api/rounds` | Resume, or start a round (`fresh`) |
 | GET | `/api/rounds/{id}?player_id=` | The current hole |
+| GET | `/api/rounds/{id}/card?player_id=` | That round's card |
 | POST | `/api/rounds/{id}/resolve?player_id=` | Save a finished card |
 | GET | `/admin` | Player table, export, and import |
 | GET | `/api/admin/summary` | Player, round, and ace counts |
